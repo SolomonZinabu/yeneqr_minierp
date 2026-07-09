@@ -1,0 +1,169 @@
+// Mini ERP — Phase 0B foundation schema
+// PostgreSQL provider (required by task spec).
+// All tenant-scoped models have a `tenantId` column that is auto-injected
+// by the Prisma $extends client in src/lib/db.ts.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Multi-tenant core ──
+
+model Tenant {
+  id                   String   @id @default(cuid())
+  name                 String // Restaurant chain name, e.g. "Bete Kitchen Group"
+  slug                 String   @unique // URL-friendly identifier
+  currency             String   @default("ETB")
+  taxRate              Float    @default(0.15) // VAT 15% Ethiopia
+  erpEnabled           Boolean  @default(true)
+  erpPlanSlug          String   @default("erp_starter") // erp_starter | erp_pro | erp_enterprise
+  erpMonthlyPriceCents Int? // null = use plan default
+  externalYeneqrId     String?  @unique // Link to YeneQR Restaurant.id (null = standalone, no YeneQR)
+  apiKey               String?  @unique // Per-tenant API key for inbound webhooks (e.g. YeneQR → Mini ERP)
+  settings             Json     @default("{}") // flexible per-tenant config
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  users        TenantUser[]
+  orgNodes     OrganizationNode[]
+  auditLogs    AuditLog[]
+  integrations TenantIntegration[]
+
+  @@index([externalYeneqrId])
+}
+
+model User {
+  id               String    @id @default(cuid())
+  email            String    @unique
+  name             String?
+  passwordHash     String?
+  image            String?
+  twoFactorEnabled Boolean   @default(false)
+  isActive         Boolean   @default(true)
+  lastLoginAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tenants TenantUser[]
+
+  @@index([email])
+}
+
+model TenantUser {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  role        String    @default("staff") // owner | accountant | manager | chef | waiter | staff
+  isPrimary   Boolean   @default(false) // primary tenant for this user
+  permissions String[]  @default([]) // additional permissions beyond role defaults
+  invitedAt   DateTime?
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model OrganizationNode {
+  id                     String   @id @default(cuid())
+  tenantId               String
+  parentId               String? // self-reference for tree (group → branch → kitchen station)
+  name                   String // "Bole Road Branch", "Hot Line Kitchen"
+  code                   String? // short code, e.g. "BOLE"
+  type                   String   @default("branch") // group | branch | kitchen_station | bar | commissary
+  externalYeneqrBranchId String? // link to YeneQR Branch.id
+  address                String?
+  phone                  String?
+  isActive               Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   OrganizationNode?  @relation("OrgTree", fields: [parentId], references: [id])
+  children OrganizationNode[] @relation("OrgTree")
+
+  @@unique([tenantId, code])
+  @@index([tenantId, parentId])
+  @@index([externalYeneqrBranchId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String?
+  action     String // e.g. "inventory.adjust", "journal.create"
+  entityType String // "InventoryItem", "JournalEntry", etc.
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, entityType, entityId])
+}
+
+// ── Integration webhook ingestion log ──
+
+model IntegrationEvent {
+  id          String    @id @default(cuid())
+  tenantId    String
+  provider    String // "yeneqr" | "toast" | "square" | "manual"
+  eventType   String // "order.created", "payment.received", etc.
+  externalId  String? // ID from the source system
+  payload     Json // full webhook payload
+  status      String    @default("received") // received | processed | failed
+  error       String?
+  processedAt DateTime?
+  receivedAt  DateTime  @default(now())
+
+  @@unique([provider, externalId])
+  @@index([tenantId, status])
+  @@index([tenantId, provider, eventType])
+}
+
+// ── Per-tenant integration credentials (e.g. webhook API keys, OAuth tokens) ──
+
+model TenantIntegration {
+  id          String   @id @default(cuid())
+  tenantId    String
+  provider    String // "yeneqr" | "toast" | "square"
+  externalId  String? // ID of the linked resource in the provider (e.g. YeneQR Restaurant.id)
+  apiKey      String? // API key used to validate inbound webhooks from this provider
+  config      Json     @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@index([tenantId, isActive])
+}
+
+// ── Subscription plans (mirrors YeneQR pattern) ──
+
+model ErpPlan {
+  id               String   @id @default(cuid())
+  slug             String   @unique // "erp_starter" | "erp_pro" | "erp_enterprise"
+  name             String
+  description      String?
+  priceCents       Int // monthly price
+  yearlyPriceCents Int?
+  features         String[] @default([]) // feature tags
+  isActive         Boolean  @default(true)
+  sortOrder        Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}

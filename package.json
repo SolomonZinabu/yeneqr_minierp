@@ -1,0 +1,20 @@
+{
+  "name": "yeneqr-minierp-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Monorepo for the YeneQR QR-ordering platform and the Mini ERP back-office system.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:yeneqr": "npm --workspace apps/yeneqr run dev",
+    "dev:minierp": "npm --workspace apps/minierp run dev",
+    "build:yeneqr": "npm --workspace apps/yeneqr run build",
+    "build:minierp": "npm --workspace apps/minierp run build",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

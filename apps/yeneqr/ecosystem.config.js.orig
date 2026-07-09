@@ -1,0 +1,33 @@
+// ============================================================
+// Yene QR — PM2 Ecosystem Config (Sandbox / Development)
+// This config is used in the development sandbox.
+// For production deployment, use ecosystem.config.prod.js
+// ============================================================
+
+module.exports = {
+  apps: [{
+    name: 'yeneqr',
+    script: './.next/standalone/server.js',
+    cwd: '/home/z/my-project',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000,
+      HOSTNAME: '0.0.0.0',
+      DATABASE_URL: 'file:/home/z/my-project/db/custom.db',
+      JWT_SECRET: 'yene-qr-dev-secret-change-in-production',
+      QR_SECRET: 'yene-qr-hmac-secret-change-in-production',
+      // Sandbox (dev) base URL — QR codes and links point to localhost
+      NEXT_PUBLIC_BASE_URL: 'http://localhost:3000',
+      NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    },
+    // Don't use --env-file since standalone server.js overrides NODE_ENV
+    // Instead, pass env vars directly through this config
+    node_args: [],
+    instances: 1,
+    autorestart: true,
+    max_restarts: 10,
+    restart_delay: 5000,
+    watch: false,
+    max_memory_restart: '1G',
+  }]
+};

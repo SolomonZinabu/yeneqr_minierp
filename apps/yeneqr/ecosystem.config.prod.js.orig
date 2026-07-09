@@ -1,0 +1,31 @@
+module.exports = {
+  apps: [
+    {
+      name: 'yeneqr',
+      script: './.next/standalone/server.js',
+      cwd: '/srv/www/yeneqr.techbee.et/YeneQR',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3200,
+        HOSTNAME: '0.0.0.0',
+
+        DATABASE_URL: 'file:/srv/www/yeneqr.techbee.et/YeneQR/yeneqr.db',
+
+        NEXTAUTH_URL: 'https://yeneqr.techbee.et',
+        NEXT_PUBLIC_BASE_URL: 'https://yeneqr.techbee.et',
+        NEXT_PUBLIC_APP_URL: 'https://yeneqr.techbee.et',
+        NEXT_PUBLIC_QR_BASE_URL: 'https://yeneqr.techbee.et',
+
+        QR_SECRET: 'yene-qr-prod-hmac-2024-habesha-continental',
+        JWT_SECRET: 'yene-qr-prod-jwt-2024-habesha-continental',
+        CRON_SECRET: 'yene-qr-prod-cron-2024-billing'
+      },
+      instances: 1,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 5000,
+      watch: false,
+      max_memory_restart: '1G'
+    }
+  ]
+};

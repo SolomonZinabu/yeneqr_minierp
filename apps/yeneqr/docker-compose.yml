@@ -1,0 +1,71 @@
+# ============================================================
+# Yene QR — Docker Compose for Self-Hosted Ubuntu VPS
+# ============================================================
+
+version: "3.8"
+
+services:
+  # Next.js Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: yene-qr-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:./db/yeneqr.db
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+      - QR_SECRET=${QR_SECRET:-change-this-qr-secret-in-production}
+      - NODE_ENV=production
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-this-nextauth-secret}
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+    volumes:
+      - app-data:/app/db
+      - app-uploads:/app/public/uploads
+    networks:
+      - yene-network
+
+  # Realtime Service (Socket.io)
+  realtime:
+    build:
+      context: ./mini-services/realtime-service
+      dockerfile: Dockerfile
+    container_name: yene-qr-realtime
+    restart: unless-stopped
+    ports:
+      - "3003:3003"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret-in-production}
+      - PORT=3003
+    networks:
+      - yene-network
+
+  # Caddy Reverse Proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: yene-qr-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - yene-network
+    depends_on:
+      - app
+      - realtime
+
+volumes:
+  app-data:
+  app-uploads:
+  caddy-data:
+  caddy-config:
+
+networks:
+  yene-network:
+    driver: bridge

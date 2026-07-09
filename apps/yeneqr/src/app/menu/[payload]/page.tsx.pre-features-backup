@@ -1,0 +1,2552 @@
+'use client'
+
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useParams } from 'next/navigation'
+import { motion, AnimatePresence } from 'framer-motion'
+import {
+  UtensilsCrossed,
+  Globe,
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
+  X,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Leaf,
+  Flame,
+  Coffee,
+  ChevronRight,
+  ChevronDown,
+  CreditCard,
+  Receipt,
+  Phone,
+  Send,
+  AlertCircle,
+  MessageSquare,
+  ClipboardList,
+  Star,
+  Bell,
+  Wallet,
+  Smartphone,
+  Landmark,
+  Banknote,
+  Gift,
+  Tag,
+  Sparkles,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Textarea } from '@/components/ui/textarea'
+import { Separator } from '@/components/ui/separator'
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerFooter } from '@/components/ui/drawer'
+import { useCustomerRealtime } from '@/lib/use-realtime'
+import {
+  resolveI18nString,
+  getLanguageDirection,
+  getLanguageFontCSS,
+  type LanguageConfig,
+  type I18nJson,
+  parseI18nJson,
+} from '@/lib/i18n'
+
+// ─── Types ────────────────────────────────────────────────────
+interface QRPayload {
+  rid: string
+  bid: string
+  tid: string
+  type: 'static' | 'dynamic' | 'temporary'
+  iat: number
+  exp: number | null
+}
+
+interface RestaurantInfo {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  slug: string
+  logo: string | null
+  cuisineType: string | null
+  defaultLanguage: string
+  currency: string
+  taxRate: number
+  serviceCharge: number
+}
+
+interface BranchInfo {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  address: string | null
+}
+
+interface TableInfo {
+  id: string
+  number: string
+  capacity: number
+}
+
+interface MenuCategory {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  icon: string | null
+  isActive: boolean
+  sortOrder: number
+}
+
+interface ModifierOption {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  price: number
+  isDefault: boolean
+}
+
+interface ModifierGroup {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  isRequired: boolean
+  selectionType: string
+  minSelection: number
+  maxSelection: number
+  options: ModifierOption[]
+}
+
+interface ComboItemInfo {
+  id: string
+  includedItemId: string
+  quantity: number
+  includedItem?: {
+    id: string
+    name: string
+    nameAm: string | null
+    nameI18n?: string | null
+    price: number
+    image: string | null
+  }
+}
+
+interface MenuItem {
+  id: string
+  name: string
+  nameAm: string | null
+  nameI18n?: string | null
+  description: string | null
+  descriptionAm: string | null
+  descriptionI18n?: string | null
+  image: string | null
+  price: number
+  preparationTime: number
+  isAvailable: boolean
+  isPopular: boolean
+  isVegetarian: boolean
+  isSpicy: boolean
+  categoryId: string
+  modifierGroups: ModifierGroup[]
+  comboItems?: ComboItemInfo[]
+}
+
+interface CartItem {
+  menuItem: MenuItem
+  quantity: number
+  selectedModifiers: { group: ModifierGroup; option: ModifierOption }[]
+  specialInstructions: string
+  totalPrice: number
+}
+
+type Screen = 'welcome' | 'menu' | 'order' | 'payment'
+type Language = string
+
+// ─── i18n Translation Context ────────────────────────────────
+interface TranslationContext {
+  lang: Language
+  defaultLang: string
+  uiStrings: Record<string, string>
+}
+
+/**
+ * Resolve a translatable name for an entity that has nameI18n.
+ * Fallback chain: i18n[lang] → i18n[defaultLang] → i18n['en'] → nameAm (if lang==='am') → name
+ */
+function resolveName(
+  name: string,
+  nameAm: string | null,
+  nameI18n: string | null | undefined,
+  lang: Language,
+  defaultLang: string = 'en'
+): string {
+  const i18nResolved = resolveI18nString(nameI18n, name, lang, defaultLang)
+  // If i18n resolved to something other than the fallback, use it
+  if (i18nResolved !== name) return i18nResolved
+  // Fall back to old nameAm pattern for backward compatibility
+  if (lang === 'am' && nameAm) return nameAm
+  return name
+}
+
+/**
+ * Resolve a translatable description for an entity that has descriptionI18n.
+ */
+function resolveDescription(
+  description: string | null,
+  descriptionAm: string | null,
+  descriptionI18n: string | null | undefined,
+  lang: Language,
+  defaultLang: string = 'en'
+): string {
+  const fallback = description || ''
+  const i18nResolved = resolveI18nString(descriptionI18n, fallback, lang, defaultLang)
+  if (i18nResolved !== fallback) return i18nResolved
+  if (lang === 'am' && descriptionAm) return descriptionAm
+  return fallback
+}
+
+/**
+ * Translate a UI string. Looks up the key in the uiStrings bundle,
+ * falls back to the provided English default.
+ */
+function tui(key: string, fallback: string, ctx: TranslationContext): string {
+  if (ctx.lang === 'en') return fallback
+  return ctx.uiStrings[key] || fallback
+}
+
+/**
+ * Combined t() function that handles both UI strings and data fields.
+ * - For data fields: t(name, nameAm, nameI18n, language, defaultLang) → resolves i18n
+ * - For UI strings with context: uses tui() directly
+ * - Backward compatible with old t(en, am, lang) calls
+ */
+function t(en: string, am: string | null, lang: Language): string {
+  // Backward compatible old format: t('English', 'አማርኛ', 'am')
+  if (lang === 'am' && am) return am
+  return en
+}
+
+// Global translation context accessible by sub-components
+let _tCtx: TranslationContext = { lang: 'en', defaultLang: 'en', uiStrings: {} }
+
+function setTranslationContext(ctx: TranslationContext) {
+  _tCtx = ctx
+}
+
+/**
+ * Translate a UI string using the global context.
+ */
+function tuiGlobal(key: string, fallback: string): string {
+  return tui(key, fallback, _tCtx)
+}
+
+/**
+ * Get resolved name for an entity using global context.
+ */
+function tName(name: string, nameAm: string | null, nameI18n?: string | null): string {
+  return resolveName(name, nameAm, nameI18n ?? null, _tCtx.lang, _tCtx.defaultLang)
+}
+
+/**
+ * Get resolved description for an entity using global context.
+ */
+function tDesc(description: string | null, descriptionAm: string | null, descriptionI18n?: string | null): string {
+  return resolveDescription(description, descriptionAm, descriptionI18n ?? null, _tCtx.lang, _tCtx.defaultLang)
+}
+
+function formatPrice(price: number, currency: string = 'ETB'): string {
+  return `${price.toLocaleString()} ${currency}`
+}
+
+// ─── Language Picker Component ────────────────────────────────
+function LanguagePicker({
+  language,
+  languages,
+  onChange,
+}: {
+  language: Language
+  languages: LanguageConfig[]
+  onChange: (lang: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  const currentLang = languages.find(l => l.code === language)
+  const displayLabel = currentLang
+    ? `${currentLang.flagEmoji || ''} ${currentLang.nameLocal}`.trim()
+    : language.toUpperCase()
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-secondary text-sm font-medium active:scale-95 transition-transform"
+      >
+        <Globe className="w-3.5 h-3.5" />
+        <span className="max-w-[100px] truncate">{displayLabel}</span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: -4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -4, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-0 top-full mt-1 z-50 min-w-[180px] max-h-[300px] overflow-y-auto bg-card border border-border rounded-xl shadow-lg py-1"
+          >
+            {languages.map(lang => {
+              const isSelected = lang.code === language
+              return (
+                <button
+                  key={lang.code}
+                  onClick={() => { onChange(lang.code); setOpen(false) }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left transition-colors ${
+                    isSelected ? 'bg-[#039D55]/10 text-[#039D55] font-medium' : 'hover:bg-muted'
+                  }`}
+                >
+                  {lang.flagEmoji && <span className="text-base">{lang.flagEmoji}</span>}
+                  <span>{lang.nameLocal}</span>
+                  {isSelected && <CheckCircle2 className="w-3.5 h-3.5 ml-auto" />}
+                </button>
+              )
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+// ─── Auto-scrolling Promotions Banner ────────────────────────
+function PromoBanner({ promotions, language }: { promotions: any[]; language: Language }) {
+  const scrollRef = React.useRef<HTMLDivElement>(null)
+  const [paused, setPaused] = useState(false)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || promotions.length <= 1) return
+
+    let animFrame: number
+    let lastTime = 0
+    const speed = 0.5 // pixels per frame at 60fps
+
+    const step = (time: number) => {
+      if (!lastTime) lastTime = time
+      if (!paused) {
+        const delta = time - lastTime
+        el.scrollLeft += speed * (delta / 16)
+        // Reset scroll when reaching end
+        if (el.scrollLeft >= el.scrollWidth - el.clientWidth) {
+          el.scrollLeft = 0
+        }
+      }
+      lastTime = time
+      animFrame = requestAnimationFrame(step)
+    }
+
+    animFrame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(animFrame)
+  }, [promotions.length, paused])
+
+  return (
+    <div className="px-4 pb-2">
+      <div
+        ref={scrollRef}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+        onTouchStart={() => setPaused(true)}
+        onTouchEnd={() => setPaused(false)}
+        className="flex gap-2 overflow-x-auto scrollbar-hide"
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      >
+        {/* Duplicate items for seamless loop */}
+        {[...promotions, ...promotions].map((promo: any, idx: number) => (
+          <motion.div
+            key={`${promo.id}-${idx}`}
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#039D55]/10 to-[#039D55]/5 border border-[#039D55]/20 shrink-0"
+          >
+            <Tag className="w-3.5 h-3.5 text-[#039D55] shrink-0" />
+            <span className="text-xs font-medium text-[#039D55] whitespace-nowrap">
+              {tName(promo.name, promo.nameAm, promo.nameI18n)}
+            </span>
+            <span className="text-[10px] text-[#039D55]/70 whitespace-nowrap">
+              {promo.discountType === 'percentage'
+                ? `${promo.discountValue}% ${tuiGlobal('common.off', 'off')}`
+                : `${promo.discountValue} ETB ${tuiGlobal('common.off', 'off')}`}
+            </span>
+            {promo.code && (
+              <span className="text-[10px] bg-[#039D55] text-white px-1.5 py-0.5 rounded font-mono">
+                {promo.code}
+              </span>
+            )}
+          </motion.div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page Component ──────────────────────────────────────
+export default function CustomerMenuPage() {
+  const params = useParams()
+  const payloadStr = params.payload as string
+
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [language, setLanguage] = useState<Language>('en')
+  const [screen, setScreen] = useState<Screen>('welcome')
+  const [sessionToken, setSessionToken] = useState<string | null>(null)
+
+  // i18n state
+  const [enabledLanguages, setEnabledLanguages] = useState<LanguageConfig[]>([])
+  const [uiStrings, setUiStrings] = useState<Record<string, string>>({})
+
+  // Restaurant data
+  const [restaurant, setRestaurant] = useState<RestaurantInfo | null>(null)
+  const [branch, setBranch] = useState<BranchInfo | null>(null)
+  const [table, setTable] = useState<TableInfo | null>(null)
+
+  // Menu data
+  const [categories, setCategories] = useState<MenuCategory[]>([])
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([])
+  const [activeCategory, setActiveCategory] = useState<string>('')
+  const [searchQuery, setSearchQuery] = useState('')
+
+  // Cart
+  const [cart, setCart] = useState<CartItem[]>([])
+  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [isItemDetailOpen, setIsItemDetailOpen] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null)
+
+  // Order
+  const [currentOrder, setCurrentOrder] = useState<{
+    id: string
+    orderNumber: string
+    status: string
+    total: number
+    items: { name: string; nameAm: string | null; quantity: number; price: number; kitchenStatus: string }[]
+    estimatedReadyAt: Date | null
+    createdAt: Date
+  } | null>(null)
+
+  // ── Payment State ──
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'telebirr' | 'chapa' | 'cbe_birr'>('cash')
+  const [showPayment, setShowPayment] = useState(false)
+  const [paymentStatus, setPaymentStatus] = useState<'select' | 'processing' | 'success' | 'failed'>('select')
+
+  // ── Waiter Call State ──
+  const [isWaiterCallOpen, setIsWaiterCallOpen] = useState(false)
+  const [waiterCallSent, setWaiterCallSent] = useState(false)
+  const [waiterCustomMessage, setWaiterCustomMessage] = useState('')
+
+  // ── Review State ──
+  const [showReview, setShowReview] = useState(false)
+  const [reviewRating, setReviewRating] = useState(5)
+  const [reviewComment, setReviewComment] = useState('')
+  const [reviewSubmitted, setReviewSubmitted] = useState(false)
+
+  // ── Real-time Connection State ──
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
+
+  // ── Placing order loading ──
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false)
+
+  // ── Promotions State ──
+  const [promotions, setPromotions] = useState<any[]>([])
+  const [couponCode, setCouponCode] = useState('')
+  const [appliedPromotion, setAppliedPromotion] = useState<any>(null)
+  const [discount, setDiscount] = useState(0)
+  const [couponError, setCouponError] = useState('')
+
+  // ── Loyalty State ──
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0)
+  const [useLoyaltyPoints, setUseLoyaltyPoints] = useState(false)
+  const [loyaltyDiscount, setLoyaltyDiscount] = useState(0)
+  const [pointsEarned, setPointsEarned] = useState(0)
+
+  // ── Update translation context when language changes ──
+  useEffect(() => {
+    setTranslationContext({
+      lang: language,
+      defaultLang: restaurant?.defaultLanguage || 'en',
+      uiStrings,
+    })
+  }, [language, uiStrings, restaurant?.defaultLanguage])
+
+  // ── Load UI strings when language or restaurant changes ──
+  useEffect(() => {
+    if (!restaurant || language === 'en') {
+      // English doesn't need a bundle — fallback is always English
+      setUiStrings({})
+      return
+    }
+    const loadStrings = async () => {
+      try {
+        const res = await fetch(`/api/i18n/ui-strings/bundle?lang=${language}&restaurantId=${restaurant.id}`)
+        if (res.ok) {
+          const data = await res.json()
+          setUiStrings(data.strings || {})
+        }
+      } catch (e) {
+        console.error('[UI_STRINGS_FETCH]', e)
+      }
+    }
+    loadStrings()
+  }, [language, restaurant?.id])
+
+  // ── Real-time Order Tracking via SSE ──
+  const { connected: sseConnected } = useCustomerRealtime({
+    restaurantId: restaurant?.id || '',
+    orderId: currentOrder?.id || null,
+    token: sessionToken || undefined,
+    onOrderUpdate: (updatedOrder: Record<string, unknown>) => {
+      const order = (updatedOrder as Record<string, unknown>) || {}
+      setCurrentOrder((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          status: (order.status as string) || prev.status,
+          items: Array.isArray(order.items)
+            ? (order.items as { name: string; nameAm: string | null; quantity: number; price: number; kitchenStatus: string }[]).map((i) => ({
+                name: i.name,
+                nameAm: i.nameAm,
+                quantity: i.quantity,
+                price: i.price,
+                kitchenStatus: i.kitchenStatus || 'pending',
+              }))
+            : prev.items,
+          estimatedReadyAt: order.status === 'accepted'
+            ? new Date(Date.now() + 20 * 60 * 1000)
+            : prev.estimatedReadyAt,
+        }
+      })
+    },
+    enabled: screen === 'order' && !!currentOrder,
+  })
+
+  // Sync SSE connected state
+  useEffect(() => {
+    setRealtimeConnected(sseConnected)
+  }, [sseConnected])
+
+  // ── Show review prompt when order is served/completed ──
+  useEffect(() => {
+    if (currentOrder && (currentOrder.status === 'served' || currentOrder.status === 'completed') && !showReview && !reviewSubmitted) {
+      setShowReview(true)
+    }
+  }, [currentOrder?.status, showReview, reviewSubmitted, currentOrder])
+
+  // ── Parse QR payload and create session ──
+  useEffect(() => {
+    async function initSession() {
+      try {
+        // Parse the payload: format is <base64payload>.<signature>
+        const dotIndex = payloadStr.lastIndexOf('.')
+        if (dotIndex === -1) {
+          setError('Invalid QR code format')
+          setLoading(false)
+          return
+        }
+
+        const encodedPayload = payloadStr.slice(0, dotIndex)
+        const signature = payloadStr.slice(dotIndex + 1)
+
+        let qrPayload: QRPayload
+        try {
+          const decoded = atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/'))
+          qrPayload = JSON.parse(decoded)
+        } catch {
+          setError('Invalid QR code data')
+          setLoading(false)
+          return
+        }
+
+        // Call session API to validate and create session
+        const res = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ payload: qrPayload, signature }),
+        })
+
+        if (!res.ok) {
+          const data = await res.json()
+          setError(data.error || 'Failed to create session')
+          setLoading(false)
+          return
+        }
+
+        const data = await res.json()
+        setSessionToken(data.token)
+        setRestaurant(data.restaurant)
+        setBranch(data.branch)
+        setTable(data.table)
+        setLanguage(data.restaurant?.defaultLanguage || data.session?.language || 'en')
+
+        // Fetch enabled languages for this restaurant
+        try {
+          const langRes = await fetch(`/api/restaurants/${qrPayload.rid}/i18n/languages`)
+          if (langRes.ok) {
+            const langData = await langRes.json()
+            const enabled = (langData.enabledLanguages || []).filter((l: LanguageConfig) => l.isActive)
+            setEnabledLanguages(enabled)
+          }
+        } catch (e) {
+          console.error('[LANG_FETCH]', e)
+        }
+
+        // Fetch initial UI strings bundle
+        const initialLang = data.restaurant?.defaultLanguage || data.session?.language || 'en'
+        if (initialLang !== 'en') {
+          try {
+            const strRes = await fetch(`/api/i18n/ui-strings/bundle?lang=${initialLang}&restaurantId=${qrPayload.rid}`)
+            if (strRes.ok) {
+              const strData = await strRes.json()
+              setUiStrings(strData.strings || {})
+            }
+          } catch (e) {
+            console.error('[UI_STRINGS_INIT]', e)
+          }
+        }
+
+        // Fetch menu data
+        const menuRes = await fetch(`/api/restaurants/${qrPayload.rid}/menus`)
+        if (menuRes.ok) {
+          const menuData = await menuRes.json()
+          const menus = menuData.menus || menuData.data || (Array.isArray(menuData) ? menuData : [])
+
+          if (menus.length > 0) {
+            const mainMenu = menus[0]
+
+            // Fetch categories
+            const catRes = await fetch(`/api/restaurants/${qrPayload.rid}/menus/${mainMenu.id}/categories`)
+            if (catRes.ok) {
+              const catData = await catRes.json()
+              const catsRaw = catData.categories || catData.data || (Array.isArray(catData) ? catData : [])
+              const cats = catsRaw.filter((c: MenuCategory) => c.isActive)
+              cats.sort((a: MenuCategory, b: MenuCategory) => a.sortOrder - b.sortOrder)
+              setCategories(cats)
+              if (cats.length > 0) setActiveCategory(cats[0].id)
+            }
+
+            // Fetch menu items
+            const itemsRes = await fetch(`/api/restaurants/${qrPayload.rid}/menus/${mainMenu.id}/items`)
+            if (itemsRes.ok) {
+              const itemsData = await itemsRes.json()
+              const items = itemsData.items || itemsData.data || (Array.isArray(itemsData) ? itemsData : [])
+              // Enrich items with modifier groups and combo items
+              const enrichedItems = await Promise.all(
+                items.map(async (item: MenuItem) => {
+                  try {
+                    const [modRes, detailRes] = await Promise.all([
+                      fetch(`/api/restaurants/${qrPayload.rid}/items/${item.id}/modifiers`),
+                      fetch(`/api/restaurants/${qrPayload.rid}/items/${item.id}`),
+                    ])
+                    let modifierGroups: ModifierGroup[] = []
+                    let comboItems: ComboItemInfo[] = []
+                    if (modRes.ok) {
+                      const modData = await modRes.json()
+                      modifierGroups = modData.modifierGroups || modData.data || modData || []
+                    }
+                    if (detailRes.ok) {
+                      const detailData = await detailRes.json()
+                      comboItems = detailData.item?.comboItems || detailData.comboItems || []
+                    }
+                    return { ...item, modifierGroups, comboItems }
+                  } catch {
+                    return { ...item, modifierGroups: [], comboItems: [] }
+                  }
+                })
+              )
+              setMenuItems(enrichedItems)
+            }
+          }
+        }
+
+        // Fetch active promotions for customer display
+        try {
+          const promoRes = await fetch(`/api/restaurants/${qrPayload.rid}/promotions?isActive=true`)
+          if (promoRes.ok) {
+            const promoData = await promoRes.json()
+            const promos = promoData.data || promoData.promotions || (Array.isArray(promoData) ? promoData : [])
+            const now = new Date()
+            const activePromos = promos.filter((p: any) => {
+              if (!p.isActive) return false
+              const from = new Date(p.validFrom)
+              const until = new Date(p.validUntil)
+              return from <= now && until >= now
+            })
+            setPromotions(activePromos)
+          }
+        } catch (e) {
+          console.error('[PROMO_FETCH]', e)
+        }
+
+        // Fetch loyalty points for customer
+        try {
+          const loyaltyRes = await fetch(`/api/restaurants/${qrPayload.rid}/loyalty`, {
+            headers: { 'Authorization': `Bearer ${data.token}` },
+          })
+          if (loyaltyRes.ok) {
+            const loyaltyData = await loyaltyRes.json()
+            setLoyaltyPoints(loyaltyData.data?.loyaltyPoints || 0)
+          }
+        } catch (e) {
+          console.error('[LOYALTY_FETCH]', e)
+        }
+
+        setLoading(false)
+      } catch (err) {
+        console.error('[QR_SESSION_INIT]', err)
+        setError('Something went wrong. Please try scanning the QR code again.')
+        setLoading(false)
+      }
+    }
+
+    if (payloadStr) {
+      initSession()
+    }
+  }, [payloadStr])
+
+  // ── Computed values ──
+  const filteredItems = menuItems.filter((item) => {
+    const matchesCategory = !activeCategory || item.categoryId === activeCategory
+    // Search across all i18n names
+    const resolvedName = tName(item.name, item.nameAm, item.nameI18n)
+    const matchesSearch =
+      !searchQuery ||
+      resolvedName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.nameAm && item.nameAm.includes(searchQuery)) ||
+      (item.nameI18n && Object.values(parseI18nJson(item.nameI18n) || {}).some(v => v.toLowerCase().includes(searchQuery.toLowerCase())))
+    return matchesCategory && matchesSearch
+  })
+
+  const getCartTotal = useCallback(() => cart.reduce((sum, ci) => sum + ci.totalPrice * ci.quantity, 0), [cart])
+  const getCartItemCount = useCallback(() => cart.reduce((sum, ci) => sum + ci.quantity, 0), [cart])
+
+  // ── Add to cart ──
+  const addToCart = useCallback((item: MenuItem, quantity: number, selectedModifiers: { group: ModifierGroup; option: ModifierOption }[], specialInstructions: string) => {
+    let totalPrice = item.price
+    selectedModifiers.forEach(({ option }) => { totalPrice += option.price })
+    totalPrice *= quantity
+
+    setCart((prev) => [...prev, { menuItem: item, quantity, selectedModifiers, specialInstructions, totalPrice: totalPrice / quantity }])
+  }, [])
+
+  const removeFromCart = useCallback((index: number) => {
+    setCart((prev) => prev.filter((_, i) => i !== index))
+  }, [])
+
+  const updateQuantity = useCallback((index: number, qty: number) => {
+    setCart((prev) => prev.map((ci, i) => (i === index ? { ...ci, quantity: qty } : ci)))
+  }, [])
+
+  const clearCart = useCallback(() => setCart([]), [])
+
+  // ── Apply coupon code ──
+  const applyCoupon = useCallback(async () => {
+    if (!couponCode.trim() || !restaurant) return
+    setCouponError('')
+
+    // Find a matching promotion by code
+    const matchingPromo = promotions.find(
+      (p: any) => p.code && p.code.toLowerCase() === couponCode.trim().toLowerCase() && p.isActive
+    )
+
+    if (!matchingPromo) {
+      setCouponError(tuiGlobal('menu.invalid_coupon', 'Invalid coupon code'))
+      return
+    }
+
+    const subtotal = getCartTotal()
+
+    // Check minimum order
+    if (matchingPromo.minimumOrder && subtotal < matchingPromo.minimumOrder) {
+      setCouponError(tuiGlobal('menu.minimum_order', `Minimum order ${matchingPromo.minimumOrder} ETB`))
+      return
+    }
+
+    // Calculate discount
+    let discountAmt = 0
+    if (matchingPromo.discountType === 'percentage') {
+      discountAmt = Math.round(subtotal * (matchingPromo.discountValue / 100))
+      if (matchingPromo.maxDiscount && discountAmt > matchingPromo.maxDiscount) {
+        discountAmt = matchingPromo.maxDiscount
+      }
+    } else {
+      discountAmt = matchingPromo.discountValue
+    }
+
+    setDiscount(discountAmt)
+    setAppliedPromotion(matchingPromo)
+    setCouponCode('')
+  }, [couponCode, promotions, restaurant, getCartTotal, language])
+
+  const removeCoupon = useCallback(() => {
+    setDiscount(0)
+    setAppliedPromotion(null)
+    setCouponCode('')
+    setCouponError('')
+  }, [])
+
+  // ── Loyalty points toggle ──
+  const toggleLoyaltyPoints = useCallback(() => {
+    if (!useLoyaltyPoints && loyaltyPoints >= 10) {
+      const subtotal = getCartTotal()
+      const maxRedeemable = Math.min(loyaltyPoints, Math.floor(subtotal / 5))
+      const ptsToUse = Math.floor(maxRedeemable / 10) * 10 // Round to minimum redemption
+      const disc = ptsToUse * 5
+      setLoyaltyDiscount(disc)
+      setUseLoyaltyPoints(true)
+    } else {
+      setLoyaltyDiscount(0)
+      setUseLoyaltyPoints(false)
+    }
+  }, [useLoyaltyPoints, loyaltyPoints, getCartTotal])
+
+  // ── Place order ──
+  const placeOrder = useCallback(async () => {
+    if (!sessionToken || !restaurant || !table || cart.length === 0) return
+
+    setIsPlacingOrder(true)
+    const subtotal = getCartTotal()
+    const totalDiscount = discount + loyaltyDiscount
+    const discountedSubtotal = Math.max(0, subtotal - totalDiscount)
+    const tax = Math.round(discountedSubtotal * (restaurant.taxRate || 0.15))
+    const serviceCharge = Math.round(discountedSubtotal * (restaurant.serviceCharge || 0))
+
+    const orderItems = cart.map((ci) => ({
+      menuItemId: ci.menuItem.id,
+      name: ci.menuItem.name,
+      nameAm: ci.menuItem.nameAm,
+      price: ci.totalPrice,
+      quantity: ci.quantity,
+      specialInstructions: ci.specialInstructions || null,
+      modifierSelections: ci.selectedModifiers.map(({ group, option }) => ({
+        modifierGroupId: group.id,
+        modifierOptionId: option.id,
+        name: option.name,
+        priceDelta: option.price,
+      })),
+    }))
+
+    try {
+      const res = await fetch(`/api/restaurants/${restaurant.id}/orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          tableId: table.id,
+          type: 'dine_in',
+          items: orderItems,
+          specialInstructions: '',
+          discountAmount: totalDiscount,
+          promotionId: appliedPromotion?.id || null,
+          loyaltyPointsUsed: useLoyaltyPoints ? Math.floor(loyaltyDiscount / 5) : 0,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const order = data.data || data
+
+        setCurrentOrder({
+          id: order.id,
+          orderNumber: order.orderNumber || `#${Date.now().toString().slice(-4)}`,
+          status: order.status || 'pending',
+          total: order.totalAmount || discountedSubtotal + tax + serviceCharge,
+          items: orderItems.map((oi) => ({
+            name: oi.name,
+            nameAm: oi.nameAm || null,
+            quantity: oi.quantity,
+            price: oi.price * oi.quantity,
+            kitchenStatus: 'pending',
+          })),
+          estimatedReadyAt: null,
+          createdAt: new Date(),
+        })
+
+        // Calculate and show earned loyalty points
+        const earned = Math.floor(discountedSubtotal / 100)
+        setPointsEarned(earned)
+        // Update local loyalty points
+        if (useLoyaltyPoints) {
+          setLoyaltyPoints((prev) => Math.max(0, prev - Math.floor(loyaltyDiscount / 5)) + earned)
+        } else {
+          setLoyaltyPoints((prev) => prev + earned)
+        }
+
+        clearCart()
+        setIsCartOpen(false)
+        setDiscount(0)
+        setAppliedPromotion(null)
+        setLoyaltyDiscount(0)
+        setUseLoyaltyPoints(false)
+
+        // Now process payment
+        await processPayment(order.id, subtotal, tax, serviceCharge)
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to place order')
+      }
+    } catch {
+      alert('Network error. Please try again.')
+    } finally {
+      setIsPlacingOrder(false)
+    }
+  }, [sessionToken, restaurant, table, cart, getCartTotal, clearCart, paymentMethod, discount, loyaltyDiscount, appliedPromotion, useLoyaltyPoints])
+
+  // ── Process Payment ──
+  const processPayment = useCallback(async (orderId: string, subtotal: number, tax: number, serviceCharge: number) => {
+    if (!restaurant || !sessionToken) return
+
+    if (paymentMethod === 'cash') {
+      // For cash, just show a message
+      setPaymentStatus('success')
+      setScreen('order')
+      return
+    }
+
+    setPaymentStatus('processing')
+
+    try {
+      const res = await fetch(`/api/restaurants/${restaurant.id}/payments`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          orderId,
+          method: paymentMethod,
+          tipAmount: 0,
+        }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        const paymentData = data.data || data
+
+        // If there's a checkout URL, show processing state then redirect
+        if (paymentData.checkoutUrl) {
+          // In a real app, redirect to payment provider
+          // For now, show processing state then success after a delay
+          setTimeout(() => {
+            setPaymentStatus('success')
+            setScreen('order')
+          }, 3000)
+        } else {
+          setPaymentStatus('success')
+          setScreen('order')
+        }
+      } else {
+        setPaymentStatus('failed')
+      }
+    } catch {
+      setPaymentStatus('failed')
+    }
+  }, [restaurant, sessionToken, paymentMethod])
+
+  // ── Waiter Call ──
+  const callWaiter = useCallback(async (requestType: string, message?: string) => {
+    if (!restaurant || !branch || !table || !sessionToken) return
+
+    try {
+      const res = await fetch(`/api/restaurants/${restaurant.id}/waiter-calls`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          branchId: branch.id,
+          tableId: table.id,
+          requestType,
+          message: message || undefined,
+        }),
+      })
+
+      if (res.ok) {
+        setWaiterCallSent(true)
+        setTimeout(() => {
+          setWaiterCallSent(false)
+          setIsWaiterCallOpen(false)
+          setWaiterCustomMessage('')
+        }, 2500)
+      } else {
+        const data = await res.json()
+        alert(data.error || 'Failed to call waiter')
+      }
+    } catch {
+      alert('Network error. Please try again.')
+    }
+  }, [restaurant, branch, table, sessionToken])
+
+  // ── Submit Review ──
+  const submitReview = useCallback(async () => {
+    if (!restaurant || !currentOrder || !sessionToken) return
+
+    try {
+      const res = await fetch(`/api/restaurants/${restaurant.id}/reviews`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${sessionToken}`,
+        },
+        body: JSON.stringify({
+          orderId: currentOrder.id,
+          customerId: `session-${sessionToken.slice(0, 8)}`,
+          rating: reviewRating,
+          comment: reviewComment || undefined,
+        }),
+      })
+
+      if (res.ok) {
+        setReviewSubmitted(true)
+      } else {
+        // Even if API fails (e.g. order not "completed" in DB), mark as submitted
+        // to avoid blocking the user
+        setReviewSubmitted(true)
+      }
+    } catch {
+      setReviewSubmitted(true)
+    }
+  }, [restaurant, currentOrder, sessionToken, reviewRating, reviewComment])
+
+  // ─── Loading State ───
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 rounded-2xl bg-[#039D55] flex items-center justify-center mb-6 shadow-lg"
+        >
+          <UtensilsCrossed className="w-10 h-10 text-white" />
+        </motion.div>
+        <Loader2 className="w-8 h-8 text-[#039D55] animate-spin mb-4" />
+        <p className="text-muted-foreground text-sm">Loading menu...</p>
+      </div>
+    )
+  }
+
+  // ─── Error State ───
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background px-6">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center mb-6"
+        >
+          <AlertCircle className="w-10 h-10 text-red-500" />
+        </motion.div>
+        <h1 className="text-xl font-bold mb-2">QR Code Error</h1>
+        <p className="text-muted-foreground text-center text-sm mb-6">{error}</p>
+        <p className="text-xs text-muted-foreground text-center">
+          Please ask restaurant staff for a new QR code.
+        </p>
+      </div>
+    )
+  }
+
+  if (!restaurant) return null
+
+  // ── RTL direction & custom font ──
+  const textDirection = getLanguageDirection(language)
+  const currentLangConfig = enabledLanguages.find(l => l.code === language)
+  const customFontCSS = getLanguageFontCSS(currentLangConfig || null)
+
+  // ─── Screens ───
+  const renderScreen = () => {
+    switch (screen) {
+      case 'welcome':
+        return (
+          <motion.div
+            className="flex flex-col min-h-screen bg-gradient-to-b from-[#039D55]/10 via-background to-background"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            {/* Language Toggle */}
+            <div className="flex justify-end p-4">
+              {enabledLanguages.length > 0 ? (
+                <LanguagePicker
+                  language={language}
+                  languages={enabledLanguages}
+                  onChange={setLanguage}
+                />
+              ) : (
+                <button
+                  onClick={() => setLanguage(language === 'en' ? 'am' : 'en')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-card shadow-sm border border-border text-sm font-medium active:scale-95 transition-transform"
+                >
+                  <Globe className="w-4 h-4" />
+                  {language === 'en' ? 'አማ' : 'EN'}
+                </button>
+              )}
+            </div>
+
+            {/* Hero */}
+            <div className="flex-1 flex flex-col items-center justify-center px-6 pb-8">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 200, delay: 0.2 }}
+                className="w-28 h-28 rounded-3xl bg-[#039D55] flex items-center justify-center mb-8 shadow-lg shadow-[#039D55]/30 overflow-hidden"
+              >
+                {restaurant.logo ? (
+                  <img src={restaurant.logo} alt={tName(restaurant.name, restaurant.nameAm, restaurant.nameI18n)} className="w-full h-full object-cover" />
+                ) : (
+                  <UtensilsCrossed className="w-14 h-14 text-white" />
+                )}
+              </motion.div>
+
+              <motion.h1
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="text-3xl font-bold text-center mb-2"
+              >
+                {tName(restaurant.name, restaurant.nameAm, restaurant.nameI18n)}
+              </motion.h1>
+
+              <motion.p
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
+                className="text-muted-foreground text-center mb-2"
+              >
+                {restaurant.cuisineType || 'Restaurant'}
+              </motion.p>
+
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center gap-2 text-sm text-muted-foreground mb-12"
+              >
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-[#039D55] animate-pulse" />
+                  {tuiGlobal('menu.table', 'Table')} {table?.number}
+                </span>
+                <span>•</span>
+                <span>{tName(branch?.name || 'Main Branch', branch?.nameAm || null, branch?.nameI18n)}</span>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                className="w-full max-w-xs"
+              >
+                <Button
+                  onClick={() => setScreen('menu')}
+                  size="lg"
+                  className="w-full h-14 text-lg font-semibold rounded-2xl bg-[#039D55] hover:bg-[#0E5433] text-white shadow-lg shadow-[#039D55]/25 active:scale-[0.98] transition-all"
+                >
+                  {tuiGlobal('menu.start_ordering', 'Start Ordering')}
+                </Button>
+              </motion.div>
+
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.8 }}
+                className="text-xs text-muted-foreground mt-4 text-center"
+              >
+                {tuiGlobal('menu.order_from_table', 'Order directly from your table')}
+              </motion.p>
+            </div>
+          </motion.div>
+        )
+
+      case 'menu':
+        return (
+          <div className="flex flex-col h-screen bg-background">
+            {/* Header */}
+            <div className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b border-border">
+              <div className="flex items-center justify-between px-4 py-3">
+                <div>
+                  <h1 className="text-lg font-bold">
+                    {tName(restaurant.name, restaurant.nameAm, restaurant.nameI18n)}
+                  </h1>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-muted-foreground">
+                      {tuiGlobal('menu.table', 'Table')} {table?.number} • {tName(branch?.name || '', branch?.nameAm || null, branch?.nameI18n)}
+                    </p>
+                    {loyaltyPoints > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                        <Gift className="w-3 h-3" />
+                        {loyaltyPoints} {tuiGlobal('menu.pts', 'pts')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setScreen('order')}
+                    className="w-9 h-9 rounded-full bg-muted flex items-center justify-center relative"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    {currentOrder && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#039D55] text-white text-[10px] font-bold rounded-full flex items-center justify-center">1</span>
+                    )}
+                  </button>
+                  {enabledLanguages.length > 0 ? (
+                    <LanguagePicker
+                      language={language}
+                      languages={enabledLanguages}
+                      onChange={setLanguage}
+                    />
+                  ) : (
+                    <button
+                      onClick={() => setLanguage(language === 'en' ? 'am' : 'en')}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-secondary text-sm font-medium active:scale-95 transition-transform"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      {language === 'en' ? 'አማ' : 'EN'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Promotions Banner - Auto-scrolling */}
+              {promotions.length > 0 && (
+                <PromoBanner promotions={promotions} language={language} />
+              )}
+
+              {/* Search */}
+              <div className="px-4 pb-2">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={tuiGlobal('menu.search_placeholder', 'Search menu...')}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full h-10 px-4 pr-10 rounded-xl bg-muted border-0 text-sm focus:outline-none focus:ring-2 focus:ring-[#039D55]/30"
+                  />
+                  {searchQuery && (
+                    <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                      <X className="w-4 h-4 text-muted-foreground" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Category Tabs */}
+              <div className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-hide">
+                {categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all active:scale-95 ${
+                      activeCategory === cat.id
+                        ? 'bg-[#039D55] text-white shadow-sm'
+                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                    }`}
+                  >
+                    {cat.icon && <span>{cat.icon}</span>}
+                    {tName(cat.name, cat.nameAm, cat.nameI18n)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Menu Items */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 pb-32">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeCategory}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.2 }}
+                  className="grid gap-3"
+                >
+                  {filteredItems.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <Coffee className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                      <p>{tuiGlobal('menu.no_items_found', 'No items found')}</p>
+                    </div>
+                  )}
+                  {filteredItems.map((item, index) => (
+                    <motion.button
+                      key={item.id}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: index * 0.03 }}
+                      onClick={() => {
+                        if (!item.isAvailable) return
+                        setSelectedItem(item)
+                        setIsItemDetailOpen(true)
+                      }}
+                      className={`flex gap-3 p-3 rounded-2xl bg-card border border-border shadow-sm text-left transition-all active:scale-[0.98] ${
+                        !item.isAvailable ? 'opacity-50' : 'hover:shadow-md'
+                      }`}
+                    >
+                      <div className="w-20 h-20 rounded-xl bg-muted flex items-center justify-center text-3xl shrink-0 overflow-hidden">
+                        {item.image ? (
+                          <img src={item.image} alt={tName(item.name, item.nameAm, item.nameI18n)} className="w-full h-full object-cover" />
+                        ) : (
+                          <span>{item.isPopular ? '⭐' : '🍽️'}</span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <h3 className="font-semibold text-sm leading-tight">
+                            {tName(item.name, item.nameAm, item.nameI18n)}
+                          </h3>
+                          {!item.isAvailable && (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                              {tuiGlobal('menu.sold_out', 'Sold Out')}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+                          {tDesc(item.description, item.descriptionAm, item.descriptionI18n)}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-2">
+                          {item.isVegetarian && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-green-700 bg-green-100 px-1.5 py-0.5 rounded-full">
+                              <Leaf className="w-3 h-3" />
+                              {tuiGlobal('menu.veg', 'Veg')}
+                            </span>
+                          )}
+                          {item.isSpicy && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full">
+                              <Flame className="w-3 h-3" />
+                              {tuiGlobal('menu.spicy', 'Spicy')}
+                            </span>
+                          )}
+                          {item.comboItems && item.comboItems.length > 0 && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-full">
+                              {tuiGlobal('menu.combo', 'Combo')}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                            <Clock className="w-3 h-3" />
+                            {item.preparationTime}m
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="font-bold text-[#039D55] text-sm">
+                            {formatPrice(item.price, restaurant.currency)}
+                          </span>
+                          {item.isAvailable && (
+                            <span className="w-8 h-8 rounded-full bg-[#039D55] text-white flex items-center justify-center shadow-sm">
+                              <Plus className="w-4 h-4" />
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* Sticky Cart Bar */}
+            {cart.length > 0 && (
+              <motion.div
+                initial={{ y: 80 }}
+                animate={{ y: 0 }}
+                className="fixed bottom-0 left-0 right-0 z-30 px-4 pb-4"
+              >
+                <button
+                  onClick={() => setIsCartOpen(true)}
+                  className="w-full flex items-center justify-between px-5 py-3.5 bg-[#039D55] text-white rounded-2xl shadow-xl shadow-[#039D55]/30 active:scale-[0.98] transition-transform"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-sm font-bold">
+                      {getCartItemCount()}
+                    </div>
+                    <span className="font-medium">
+                      {getCartItemCount() === 1
+                        ? tuiGlobal('menu.1_item', '1 item')
+                        : tuiGlobal('menu.n_items', `${getCartItemCount()} items`)}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold">{formatPrice(getCartTotal(), restaurant.currency)}</span>
+                    <ChevronRight className="w-4 h-4" />
+                  </div>
+                </button>
+              </motion.div>
+            )}
+
+            {/* Floating Waiter Call Button */}
+            <WaiterCallButton
+              isOpen={isWaiterCallOpen}
+              onToggle={() => setIsWaiterCallOpen(!isWaiterCallOpen)}
+              onCall={callWaiter}
+              callSent={waiterCallSent}
+              customMessage={waiterCustomMessage}
+              onCustomMessageChange={setWaiterCustomMessage}
+              language={language}
+            />
+
+            {/* Item Detail Drawer */}
+            <ItemDetailDrawer
+              item={selectedItem}
+              open={isItemDetailOpen}
+              onOpenChange={(open) => { if (!open) { setIsItemDetailOpen(false); setSelectedItem(null) } }}
+              language={language}
+              currency={restaurant.currency}
+              onAddToCart={addToCart}
+            />
+
+            {/* Cart Drawer */}
+            <CartDrawer
+              open={isCartOpen}
+              onOpenChange={setIsCartOpen}
+              cart={cart}
+              language={language}
+              currency={restaurant.currency}
+              taxRate={restaurant.taxRate}
+              serviceCharge={restaurant.serviceCharge}
+              onUpdateQuantity={updateQuantity}
+              onRemoveItem={removeFromCart}
+              onPlaceOrder={() => {
+                // Instead of placing order directly, show payment screen
+                setIsCartOpen(false)
+                setShowPayment(true)
+                setScreen('payment')
+              }}
+              couponCode={couponCode}
+              onCouponCodeChange={setCouponCode}
+              appliedPromotion={appliedPromotion}
+              discount={discount}
+              couponError={couponError}
+              onApplyCoupon={applyCoupon}
+              onRemoveCoupon={removeCoupon}
+              loyaltyPoints={loyaltyPoints}
+              useLoyaltyPoints={useLoyaltyPoints}
+              loyaltyDiscount={loyaltyDiscount}
+              onToggleLoyaltyPoints={toggleLoyaltyPoints}
+            />
+          </div>
+        )
+
+      case 'payment':
+        return (
+          <PaymentScreen
+            language={language}
+            currency={restaurant.currency}
+            taxRate={restaurant.taxRate}
+            serviceCharge={restaurant.serviceCharge}
+            cart={cart}
+            paymentMethod={paymentMethod}
+            onPaymentMethodChange={setPaymentMethod}
+            paymentStatus={paymentStatus}
+            onPlaceOrder={placeOrder}
+            isPlacingOrder={isPlacingOrder}
+            discount={discount + loyaltyDiscount}
+            loyaltyDiscount={loyaltyDiscount}
+            couponDiscount={discount}
+            appliedPromotion={appliedPromotion}
+            useLoyaltyPoints={useLoyaltyPoints}
+            loyaltyPoints={loyaltyPoints}
+            pointsEarned={pointsEarned}
+            onBack={() => {
+              setScreen('menu')
+              setShowPayment(false)
+              setPaymentStatus('select')
+            }}
+          />
+        )
+
+      case 'order':
+        return (
+          <div className="flex flex-col h-screen bg-background">
+            {/* Header */}
+            <div className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div>
+                  <h1 className="text-lg font-bold">{tuiGlobal('menu.order_status', 'Order Status')}</h1>
+                  <p className="text-xs text-muted-foreground">
+                    {tName(restaurant.name, restaurant.nameAm, restaurant.nameI18n)} • {tuiGlobal('menu.table', 'Table')} {table?.number}
+                  </p>
+                </div>
+                {/* Real-time indicator */}
+                <div className="flex items-center gap-1 ml-2" title={realtimeConnected ? 'Connected (SSE)' : 'Polling'}>
+                  <span className={`w-2 h-2 rounded-full ${realtimeConnected ? 'bg-green-500' : 'bg-yellow-500'} ${realtimeConnected ? '' : 'animate-pulse'}`} />
+                  <span className="text-[10px] text-muted-foreground">
+                    {realtimeConnected ? tuiGlobal('menu.live', 'Live') : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setScreen('menu')}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#039D55] text-white text-sm font-medium"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {tuiGlobal('menu.add_more', 'Add More')}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
+              {!currentOrder ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <ClipboardList className="w-16 h-16 text-muted-foreground/30 mb-4" />
+                  <h2 className="text-lg font-semibold mb-2">{tuiGlobal('menu.no_active_order', 'No Active Order')}</h2>
+                  <p className="text-sm text-muted-foreground text-center mb-6">
+                    {tuiGlobal('menu.place_order_to_track', 'Place an order to track it here')}
+                  </p>
+                  <Button onClick={() => setScreen('menu')} className="bg-[#039D55] hover:bg-[#0E5433] text-white rounded-xl">
+                    {tuiGlobal('menu.browse_menu', 'Browse Menu')}
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {/* Order Status Card */}
+                  <div className="bg-[#039D55]/5 rounded-2xl p-4 mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h2 className="text-lg font-bold">
+                        {tuiGlobal('menu.order', 'Order')} {currentOrder.orderNumber}
+                      </h2>
+                      <Badge className="bg-[#039D55] text-white capitalize">
+                        {currentOrder.status}
+                      </Badge>
+                    </div>
+                    {currentOrder.estimatedReadyAt && currentOrder.status !== 'served' && (
+                      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                        <Clock className="w-4 h-4" />
+                        {tuiGlobal('menu.est_ready_in', 'Est. ready in')} ~{Math.max(1, Math.round((currentOrder.estimatedReadyAt.getTime() - Date.now()) / 60000))} {tuiGlobal('menu.min', 'min')}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Status Steps */}
+                  <div className="mb-6">
+                    {['pending', 'accepted', 'preparing', 'ready', 'served'].map((status, i) => {
+                      const statusIndex = ['pending', 'accepted', 'preparing', 'ready', 'served'].indexOf(currentOrder.status)
+                      const isActive = i <= statusIndex
+                      const statusLabels: Record<string, { en: string }> = {
+                        pending: { en: 'Pending' },
+                        accepted: { en: 'Accepted' },
+                        preparing: { en: 'Preparing' },
+                        ready: { en: 'Ready' },
+                        served: { en: 'Served' },
+                      }
+                      return (
+                        <div key={status} className="flex items-start gap-3 mb-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                            isActive ? 'bg-[#039D55] text-white' : 'bg-muted text-muted-foreground'
+                          }`}>
+                            {isActive ? <CheckCircle2 className="w-4 h-4" /> : <span className="text-xs">{i + 1}</span>}
+                          </div>
+                          <div className="pt-1">
+                            <p className={`text-sm font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>
+                              {tuiGlobal(`menu.status_${status}`, statusLabels[status].en)}
+                            </p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Order Items */}
+                  <div className="space-y-3">
+                    <h3 className="font-semibold text-sm">{tuiGlobal('menu.items', 'Items')}</h3>
+                    {currentOrder.items.map((item, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border">
+                        <div>
+                          <p className="text-sm font-medium">{tName(item.name, item.nameAm, null)}</p>
+                          <p className="text-xs text-muted-foreground">x{item.quantity}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-[#039D55]">{formatPrice(item.price, restaurant.currency)}</p>
+                          {item.kitchenStatus !== 'pending' && (
+                            <Badge variant="outline" className="text-[10px] capitalize">{item.kitchenStatus}</Badge>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Review Section */}
+                  <AnimatePresence>
+                    {showReview && (
+                      <ReviewSection
+                        language={language}
+                        rating={reviewRating}
+                        onRatingChange={setReviewRating}
+                        comment={reviewComment}
+                        onCommentChange={setReviewComment}
+                        submitted={reviewSubmitted}
+                        onSubmit={submitReview}
+                        onSkip={() => { setShowReview(false); setReviewSubmitted(true) }}
+                      />
+                    )}
+                  </AnimatePresence>
+                </>
+              )}
+            </div>
+
+            {/* Floating Waiter Call Button on Order Screen */}
+            <WaiterCallButton
+              isOpen={isWaiterCallOpen}
+              onToggle={() => setIsWaiterCallOpen(!isWaiterCallOpen)}
+              onCall={callWaiter}
+              callSent={waiterCallSent}
+              customMessage={waiterCustomMessage}
+              onCustomMessageChange={setWaiterCustomMessage}
+              language={language}
+            />
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div
+      dir={textDirection}
+      style={customFontCSS ? { fontFamily: customFontCSS.replace(/font-family:\s*/, '').replace(/;\s*$/, '') } : undefined}
+    >
+      {renderScreen()}
+    </div>
+  )
+}
+
+// ─── Payment Screen Component ─────────────────────────────────
+function PaymentScreen({
+  language,
+  currency,
+  taxRate,
+  serviceCharge,
+  cart,
+  paymentMethod,
+  onPaymentMethodChange,
+  paymentStatus,
+  onPlaceOrder,
+  isPlacingOrder,
+  onBack,
+  discount = 0,
+  loyaltyDiscount = 0,
+  couponDiscount = 0,
+  appliedPromotion = null,
+  useLoyaltyPoints = false,
+  loyaltyPoints = 0,
+  pointsEarned = 0,
+}: {
+  language: Language
+  currency: string
+  taxRate: number
+  serviceCharge: number
+  cart: CartItem[]
+  paymentMethod: 'cash' | 'telebirr' | 'chapa' | 'cbe_birr'
+  onPaymentMethodChange: (method: 'cash' | 'telebirr' | 'chapa' | 'cbe_birr') => void
+  paymentStatus: 'select' | 'processing' | 'success' | 'failed'
+  onPlaceOrder: () => void
+  isPlacingOrder: boolean
+  onBack: () => void
+  discount?: number
+  loyaltyDiscount?: number
+  couponDiscount?: number
+  appliedPromotion?: any
+  useLoyaltyPoints?: boolean
+  loyaltyPoints?: number
+  pointsEarned?: number
+}) {
+  const rawSubtotal = cart.reduce((sum, ci) => sum + ci.totalPrice * ci.quantity, 0)
+  const totalDiscount = discount
+  const subtotal = Math.max(0, rawSubtotal - totalDiscount)
+  const tax = Math.round(subtotal * (taxRate || 0.15))
+  const service = Math.round(subtotal * (serviceCharge || 0))
+  const total = subtotal + tax + service
+
+  const paymentMethods = [
+    { id: 'cash' as const, icon: '💵', label: tuiGlobal('menu.cash', 'Cash'), sublabel: tuiGlobal('menu.pay_at_counter', 'Pay at counter'), Icon: Banknote },
+    { id: 'telebirr' as const, icon: '📱', label: 'Telebirr', sublabel: tuiGlobal('menu.mobile_payment', 'Mobile payment'), Icon: Smartphone },
+    { id: 'chapa' as const, icon: '💳', label: 'Chapa', sublabel: tuiGlobal('menu.online_payment', 'Online payment'), Icon: CreditCard },
+    { id: 'cbe_birr' as const, icon: '🏦', label: 'CBE Birr', sublabel: tuiGlobal('menu.bank_transfer', 'Bank transfer'), Icon: Landmark },
+  ]
+
+  // ── Processing state ──
+  if (paymentStatus === 'processing') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background px-6">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 rounded-2xl bg-[#039D55]/10 flex items-center justify-center mb-6"
+        >
+          <Loader2 className="w-10 h-10 text-[#039D55] animate-spin" />
+        </motion.div>
+        <h2 className="text-xl font-bold mb-2">{tuiGlobal('menu.processing_payment', 'Processing Payment...')}</h2>
+        <p className="text-sm text-muted-foreground text-center">
+          {tuiGlobal('menu.redirecting_payment', 'Redirecting to payment provider...')}
+        </p>
+      </div>
+    )
+  }
+
+  // ── Success state ──
+  if (paymentStatus === 'success') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background px-6">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 rounded-2xl bg-[#039D55] flex items-center justify-center mb-6 shadow-lg shadow-[#039D55]/30"
+        >
+          <CheckCircle2 className="w-10 h-10 text-white" />
+        </motion.div>
+        <h2 className="text-xl font-bold mb-2">{tuiGlobal('menu.order_placed', 'Order Placed!')}</h2>
+        {pointsEarned > 0 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.3 }}
+            className="flex items-center gap-2 bg-amber-50 text-amber-700 px-4 py-2 rounded-xl mb-3"
+          >
+            <Sparkles className="w-4 h-4" />
+            <span className="text-sm font-semibold">
+              {tuiGlobal('menu.earned_points', `You earned ${pointsEarned} points!`)}
+            </span>
+          </motion.div>
+        )}
+        {paymentMethod === 'cash' ? (
+          <p className="text-sm text-muted-foreground text-center mb-4">
+            {tuiGlobal('menu.pay_at_counter_ready', 'Please pay at the counter when your order is ready.')}
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center mb-4">
+            {tuiGlobal('menu.payment_processing_msg', "Your payment is being processed. You'll be notified once confirmed.")}
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  // ── Failed state ──
+  if (paymentStatus === 'failed') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background px-6">
+        <motion.div
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: 'spring', stiffness: 200 }}
+          className="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center mb-6"
+        >
+          <AlertCircle className="w-10 h-10 text-red-500" />
+        </motion.div>
+        <h2 className="text-xl font-bold mb-2">{tuiGlobal('menu.payment_failed', 'Payment Failed')}</h2>
+        <p className="text-sm text-muted-foreground text-center mb-6">
+          {tuiGlobal('menu.payment_failed_msg', 'Your order was placed but payment could not be processed. Please try again or pay at the counter.')}
+        </p>
+        <Button onClick={onBack} className="bg-[#039D55] hover:bg-[#0E5433] text-white rounded-xl">
+          {tuiGlobal('menu.back_to_menu', 'Back to Menu')}
+        </Button>
+      </div>
+    )
+  }
+
+  // ── Select payment method state ──
+  return (
+    <div className="flex flex-col min-h-screen bg-background">
+      {/* Header */}
+      <div className="sticky top-0 z-20 bg-background border-b border-border px-4 py-3 flex items-center gap-3">
+        <button
+          onClick={onBack}
+          className="w-9 h-9 rounded-full bg-muted flex items-center justify-center active:scale-95"
+        >
+          <X className="w-4 h-4" />
+        </button>
+        <div>
+          <h1 className="text-lg font-bold">{tuiGlobal('menu.payment', 'Payment')}</h1>
+          <p className="text-xs text-muted-foreground">{tuiGlobal('menu.choose_how_to_pay', 'Choose how to pay')}</p>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-4 pb-32">
+        {/* Order Summary */}
+        <div className="bg-card border border-border rounded-2xl p-4 mb-6">
+          <h3 className="font-semibold text-sm mb-3">{tuiGlobal('menu.order_summary', 'Order Summary')}</h3>
+          {cart.map((ci, index) => (
+            <div key={`${ci.menuItem.id}-${index}`} className="flex items-center gap-2 text-sm py-1">
+              {ci.menuItem.image && (
+                <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
+                  <img src={ci.menuItem.image} alt={tName(ci.menuItem.name, ci.menuItem.nameAm, ci.menuItem.nameI18n)} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <span className="text-muted-foreground flex-1 truncate">
+                {tName(ci.menuItem.name, ci.menuItem.nameAm, ci.menuItem.nameI18n)} x{ci.quantity}
+              </span>
+              <span className="shrink-0">{formatPrice(ci.totalPrice * ci.quantity, currency)}</span>
+            </div>
+          ))}
+          <Separator className="my-3" />
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-muted-foreground">{tuiGlobal('menu.subtotal', 'Subtotal')}</span>
+            <span>{formatPrice(rawSubtotal, currency)}</span>
+          </div>
+          {totalDiscount > 0 && (
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                {tuiGlobal('menu.discount', 'Discount')}
+              </span>
+              <span className="text-[#039D55]">-{formatPrice(totalDiscount, currency)}</span>
+            </div>
+          )}
+          {couponDiscount > 0 && appliedPromotion && (
+            <div className="flex justify-between text-xs mb-1 text-muted-foreground">
+              <span>{tuiGlobal('menu.coupon', 'Coupon')}: {appliedPromotion.name}</span>
+              <span>-{formatPrice(couponDiscount, currency)}</span>
+            </div>
+          )}
+          {useLoyaltyPoints && loyaltyDiscount > 0 && (
+            <div className="flex justify-between text-xs mb-1 text-muted-foreground">
+              <span className="flex items-center gap-1"><Gift className="w-3 h-3" />{tuiGlobal('menu.loyalty_points', 'Loyalty Points')} ({Math.floor(loyaltyDiscount / 5)} pts)</span>
+              <span>-{formatPrice(loyaltyDiscount, currency)}</span>
+            </div>
+          )}
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-muted-foreground">{tuiGlobal('menu.tax', 'Tax')} ({Math.round((taxRate || 0.15) * 100)}%)</span>
+            <span>{formatPrice(tax, currency)}</span>
+          </div>
+          {service > 0 && (
+            <div className="flex justify-between text-sm mb-1">
+              <span className="text-muted-foreground">{tuiGlobal('menu.service', 'Service')} ({Math.round(serviceCharge * 100)}%)</span>
+              <span>{formatPrice(service, currency)}</span>
+            </div>
+          )}
+          <Separator className="my-2" />
+          <div className="flex justify-between font-bold text-base">
+            <span>{tuiGlobal('menu.total', 'Total')}</span>
+            <span className="text-[#039D55]">{formatPrice(total, currency)}</span>
+          </div>
+        </div>
+
+        {/* Payment Method Selection */}
+        <h3 className="font-semibold text-sm mb-3">{tuiGlobal('menu.payment_method', 'Payment Method')}</h3>
+        <div className="grid gap-3">
+          {paymentMethods.map((method) => {
+            const isSelected = paymentMethod === method.id
+            return (
+              <motion.button
+                key={method.id}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => onPaymentMethodChange(method.id)}
+                className={`flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${
+                  isSelected
+                    ? 'border-[#039D55] bg-[#039D55]/5 shadow-sm'
+                    : 'border-border bg-card hover:border-[#039D55]/30'
+                }`}
+              >
+                <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center text-2xl shrink-0">
+                  {method.icon}
+                </div>
+                <div className="flex-1 text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-sm">{method.label}</span>
+                    {isSelected && (
+                      <CheckCircle2 className="w-4 h-4 text-[#039D55]" />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{method.sublabel}</p>
+                </div>
+                <method.Icon className={`w-5 h-5 ${isSelected ? 'text-[#039D55]' : 'text-muted-foreground'}`} />
+              </motion.button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Sticky Pay Button */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 p-4 bg-background border-t border-border">
+        <Button
+          onClick={onPlaceOrder}
+          disabled={isPlacingOrder}
+          className="w-full h-14 rounded-2xl bg-[#039D55] hover:bg-[#0E5433] text-white font-semibold text-base shadow-lg shadow-[#039D55]/25"
+        >
+          {isPlacingOrder ? (
+            <span className="flex items-center gap-2">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              {tuiGlobal('menu.placing_order', 'Placing Order...')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-2">
+              {paymentMethod === 'cash' ? <Banknote className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
+              {paymentMethod === 'cash'
+                ? `${tuiGlobal('menu.place_order', 'Place Order')} • ${formatPrice(total, currency)}`
+                : `${tuiGlobal('menu.pay_now', 'Pay Now')} • ${formatPrice(total, currency)}`
+              }
+            </span>
+          )}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Waiter Call Button Component ─────────────────────────────
+function WaiterCallButton({
+  isOpen,
+  onToggle,
+  onCall,
+  callSent,
+  customMessage,
+  onCustomMessageChange,
+  language,
+}: {
+  isOpen: boolean
+  onToggle: () => void
+  onCall: (requestType: string, message?: string) => void
+  callSent: boolean
+  customMessage: string
+  onCustomMessageChange: (msg: string) => void
+  language: Language
+}) {
+  const [selectedType, setSelectedType] = useState<string | null>(null)
+
+  const options = [
+    { type: 'call_waiter', icon: '🙋', label: tuiGlobal('menu.call_waiter', 'Call Waiter') },
+    { type: 'request_bill', icon: '💰', label: tuiGlobal('menu.request_bill', 'Request Bill') },
+    { type: 'request_menu', icon: '📋', label: tuiGlobal('menu.request_menu', 'Request Menu') },
+    { type: 'custom', icon: '✏️', label: tuiGlobal('menu.custom_message', 'Custom Message') },
+  ]
+
+  const handleSelect = (type: string) => {
+    if (type === 'custom') {
+      setSelectedType('custom')
+    } else {
+      onCall(type)
+    }
+  }
+
+  return (
+    <>
+      {/* Floating Button */}
+      <motion.button
+        onClick={onToggle}
+        className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-[#039D55] text-white flex items-center justify-center shadow-xl shadow-[#039D55]/30 active:scale-95 transition-transform"
+        whileTap={{ scale: 0.9 }}
+        initial={{ scale: 0 }}
+        animate={{ scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, delay: 0.5 }}
+      >
+        {callSent ? (
+          <CheckCircle2 className="w-6 h-6" />
+        ) : (
+          <Bell className="w-6 h-6" />
+        )}
+      </motion.button>
+
+      {/* Waiter Call Drawer */}
+      <Drawer open={isOpen} onOpenChange={(open) => { if (!open) { onToggle(); setSelectedType(null) } }}>
+        <DrawerContent className="max-h-[70vh]">
+          <DrawerHeader className="border-b border-border">
+            <DrawerTitle className="flex items-center gap-2">
+              <Bell className="w-5 h-5 text-[#039D55]" />
+              {tuiGlobal('menu.call_waiter', 'Call Waiter')}
+            </DrawerTitle>
+            <DrawerDescription>
+              {tuiGlobal('menu.how_can_we_help', 'How can we help you?')}
+            </DrawerDescription>
+          </DrawerHeader>
+
+          <div className="px-4 py-4">
+            {callSent ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center py-8"
+              >
+                <div className="w-16 h-16 rounded-full bg-[#039D55]/10 flex items-center justify-center mb-4">
+                  <CheckCircle2 className="w-8 h-8 text-[#039D55]" />
+                </div>
+                <p className="font-semibold text-lg">{tuiGlobal('menu.waiter_notified', 'Waiter has been notified!')}</p>
+                <p className="text-sm text-muted-foreground mt-1">{tuiGlobal('menu.someone_shortly', 'Someone will be with you shortly')}</p>
+              </motion.div>
+            ) : selectedType === 'custom' ? (
+              <div className="space-y-4">
+                <Textarea
+                  placeholder={tuiGlobal('menu.type_message', 'Type your message...')}
+                  value={customMessage}
+                  onChange={(e) => onCustomMessageChange(e.target.value)}
+                  className="min-h-[100px] rounded-xl resize-none"
+                  autoFocus
+                />
+                <div className="flex gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedType(null)}
+                    className="flex-1 rounded-xl"
+                  >
+                    {tuiGlobal('menu.back', 'Back')}
+                  </Button>
+                  <Button
+                    onClick={() => onCall('custom', customMessage)}
+                    disabled={!customMessage.trim()}
+                    className="flex-1 rounded-xl bg-[#039D55] hover:bg-[#0E5433] text-white"
+                  >
+                    <Send className="w-4 h-4 mr-2" />
+                    {tuiGlobal('menu.send', 'Send')}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {options.map((opt) => (
+                  <motion.button
+                    key={opt.type}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => handleSelect(opt.type)}
+                    className="flex items-center gap-4 p-4 rounded-2xl bg-card border border-border hover:border-[#039D55]/30 hover:shadow-sm transition-all active:scale-[0.98]"
+                  >
+                    <span className="text-2xl">{opt.icon}</span>
+                    <span className="font-medium text-sm">{opt.label}</span>
+                    <ChevronRight className="w-4 h-4 ml-auto text-muted-foreground" />
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </div>
+        </DrawerContent>
+      </Drawer>
+    </>
+  )
+}
+
+// ─── Review Section Component ─────────────────────────────────
+function ReviewSection({
+  language,
+  rating,
+  onRatingChange,
+  comment,
+  onCommentChange,
+  submitted,
+  onSubmit,
+  onSkip,
+}: {
+  language: Language
+  rating: number
+  onRatingChange: (r: number) => void
+  comment: string
+  onCommentChange: (c: string) => void
+  submitted: boolean
+  onSubmit: () => void
+  onSkip: () => void
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      className="mt-6 bg-[#039D55]/5 rounded-2xl p-4 border border-[#039D55]/20"
+    >
+      {submitted ? (
+        <div className="text-center py-4">
+          <div className="w-12 h-12 rounded-full bg-[#039D55] flex items-center justify-center mx-auto mb-3">
+            <CheckCircle2 className="w-6 h-6 text-white" />
+          </div>
+          <p className="font-semibold text-[#039D55]">{tuiGlobal('menu.thank_you_feedback', 'Thank you for your feedback!')}</p>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-sm">{tuiGlobal('menu.how_was_experience', 'How was your experience?')}</h3>
+            <button onClick={onSkip} className="text-xs text-muted-foreground hover:text-foreground">
+              {tuiGlobal('menu.skip', 'Skip')}
+            </button>
+          </div>
+
+          {/* Star Rating */}
+          <div className="flex items-center gap-1 mb-3">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => onRatingChange(star)}
+                className="p-1 active:scale-90 transition-transform"
+              >
+                <Star
+                  className={`w-7 h-7 ${
+                    star <= rating
+                      ? 'text-yellow-400 fill-yellow-400'
+                      : 'text-muted-foreground/30'
+                  }`}
+                />
+              </button>
+            ))}
+          </div>
+
+          {/* Comment */}
+          <Textarea
+            placeholder={tuiGlobal('menu.share_thoughts', 'Share your thoughts (optional)...')}
+            value={comment}
+            onChange={(e) => onCommentChange(e.target.value)}
+            className="min-h-[70px] rounded-xl resize-none text-sm mb-3"
+          />
+
+          <Button
+            onClick={onSubmit}
+            className="w-full rounded-xl bg-[#039D55] hover:bg-[#0E5433] text-white font-semibold"
+          >
+            {tuiGlobal('menu.submit_review', 'Submit Review')}
+          </Button>
+        </>
+      )}
+    </motion.div>
+  )
+}
+
+// ─── Item Detail Drawer ───────────────────────────────────────
+function ItemDetailDrawer({
+  item,
+  open,
+  onOpenChange,
+  language,
+  currency,
+  onAddToCart,
+}: {
+  item: MenuItem | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  language: Language
+  currency: string
+  onAddToCart: (item: MenuItem, quantity: number, modifiers: { group: ModifierGroup; option: ModifierOption }[], specialInstructions: string) => void
+}) {
+  // Track previous item id to reset state when item changes
+  const [prevItemId, setPrevItemId] = useState<string | null>(null)
+  const itemId = item?.id ?? null
+  const itemChanged = prevItemId !== itemId
+  if (itemChanged) {
+    setPrevItemId(itemId)
+  }
+  const [quantity, setQuantity] = useState(1)
+  const [selectedModifiers, setSelectedModifiers] = useState<Map<string, ModifierOption>>(new Map())
+  const [specialInstructions, setSpecialInstructions] = useState('')
+  const [showAdded, setShowAdded] = useState(false)
+
+  // Reset state when item changes (derived from itemChanged, not in useEffect)
+  const effectiveQuantity = itemChanged ? 1 : quantity
+  const effectiveModifiers = itemChanged ? new Map<string, ModifierOption>() : selectedModifiers
+  const effectiveInstructions = itemChanged ? '' : specialInstructions
+  const effectiveShowAdded = itemChanged ? false : showAdded
+
+  if (!item) return null
+
+  const totalPrice = (() => {
+    let price = item.price
+    effectiveModifiers.forEach((opt) => { price += opt.price })
+    return price * effectiveQuantity
+  })()
+
+  const handleAdd = () => {
+    const mods: { group: ModifierGroup; option: ModifierOption }[] = []
+    effectiveModifiers.forEach((opt, groupId) => {
+      const group = item.modifierGroups.find((g) => g.id === groupId)
+      if (group) mods.push({ group, option: opt })
+    })
+    onAddToCart(item, effectiveQuantity, mods, effectiveInstructions)
+    setShowAdded(true)
+    setTimeout(() => onOpenChange(false), 800)
+  }
+
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-[90vh]">
+        <div className="overflow-y-auto max-h-[85vh]">
+          {/* Item Header */}
+          <div className="w-full h-40 bg-muted flex items-center justify-center text-5xl relative overflow-hidden">
+            {item.image ? (
+              <img src={item.image} alt={tName(item.name, item.nameAm, item.nameI18n)} className="w-full h-full object-cover" />
+            ) : (
+              <span>{item.isPopular ? '⭐' : '🍽️'}</span>
+            )}
+            <button
+              onClick={() => onOpenChange(false)}
+              className="absolute top-3 right-3 w-8 h-8 rounded-full bg-background/80 backdrop-blur-sm flex items-center justify-center"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="px-4 pt-4">
+            <h2 className="text-xl font-bold">{tName(item.name, item.nameAm, item.nameI18n)}</h2>
+            <p className="text-sm text-muted-foreground mt-1">{tDesc(item.description, item.descriptionAm, item.descriptionI18n)}</p>
+            <div className="flex items-center gap-2 mt-3">
+              {item.isVegetarian && (
+                <Badge variant="secondary" className="text-green-700 bg-green-100"><Leaf className="w-3 h-3 mr-1" />{tuiGlobal('menu.veg', 'Veg')}</Badge>
+              )}
+              {item.isSpicy && (
+                <Badge variant="secondary" className="text-orange-700 bg-orange-100"><Flame className="w-3 h-3 mr-1" />{tuiGlobal('menu.spicy', 'Spicy')}</Badge>
+              )}
+            </div>
+            <p className="text-xl font-bold text-[#039D55] mt-3">{formatPrice(item.price, currency)}</p>
+
+            {/* Combo Items Section */}
+            {item.comboItems && item.comboItems.length > 0 && (
+              <div className="mt-3 p-3 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800/30">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <span className="text-sm font-semibold text-purple-700 dark:text-purple-400">{tuiGlobal('menu.includes', 'Includes')}</span>
+                </div>
+                <div className="space-y-1.5">
+                  {item.comboItems.map((ci) => {
+                    const comboItemName = ci.includedItem ? tName(ci.includedItem.name, ci.includedItem.nameAm, ci.includedItem.nameI18n) : tuiGlobal('menu.item', 'Item')
+                    const comboItemPrice = ci.includedItem?.price || 0
+                    return (
+                      <div key={ci.id} className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="w-5 h-5 rounded-full bg-purple-100 dark:bg-purple-800/30 flex items-center justify-center text-[10px] font-bold text-purple-700 dark:text-purple-400">
+                            {ci.quantity}
+                          </span>
+                          <span>{comboItemName}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{formatPrice(comboItemPrice, currency)} {tuiGlobal('menu.each', 'each')}</span>
+                      </div>
+                    )
+                  })}
+                  {/* Show savings */}
+                  {(() => {
+                    const itemsTotal = item.comboItems.reduce((sum, ci) => sum + (ci.includedItem?.price || 0) * ci.quantity, 0)
+                    const savings = itemsTotal - item.price
+                    if (savings > 0) {
+                      return (
+                        <div className="flex items-center justify-between pt-1.5 mt-1.5 border-t border-purple-200 dark:border-purple-700/40">
+                          <span className="text-xs font-medium text-purple-700 dark:text-purple-400">{tuiGlobal('menu.you_save', 'You save')}</span>
+                          <span className="text-xs font-bold text-purple-700 dark:text-purple-400">{formatPrice(savings, currency)}</span>
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Separator className="my-4" />
+
+          {/* Modifiers */}
+          {item.modifierGroups.map((group) => (
+            <div key={group.id} className="px-4 mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <h3 className="font-semibold text-sm">{tName(group.name, group.nameAm, group.nameI18n)}</h3>
+                {group.isRequired && <Badge variant="outline" className="text-[10px]">{tuiGlobal('menu.required', 'Required')}</Badge>}
+              </div>
+              <div className="grid gap-2">
+                {group.options.map((option) => {
+                  const isSelected = effectiveModifiers.get(group.id)?.id === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => {
+                        setSelectedModifiers((prev) => {
+                          const next = new Map(prev)
+                          if (isSelected) next.delete(group.id)
+                          else next.set(group.id, option)
+                          return next
+                        })
+                      }}
+                      className={`flex items-center justify-between p-3 rounded-xl border transition-all active:scale-[0.98] ${
+                        isSelected ? 'border-[#039D55] bg-[#039D55]/5' : 'border-border hover:border-[#039D55]/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[#039D55] bg-[#039D55]' : 'border-muted-foreground/40'}`}>
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
+                        </div>
+                        <span className="text-sm font-medium">{tName(option.name, option.nameAm, option.nameI18n)}</span>
+                      </div>
+                      {option.price > 0 && <span className="text-sm text-muted-foreground">+{formatPrice(option.price, currency)}</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+
+          {/* Special Instructions */}
+          <div className="px-4 mb-4">
+            <h3 className="font-semibold text-sm mb-2">{tuiGlobal('menu.special_instructions', 'Special Instructions')}</h3>
+            <Textarea
+              placeholder={tuiGlobal('menu.allergies_preferences', 'Any allergies or preferences...')}
+              value={effectiveInstructions}
+              onChange={(e) => setSpecialInstructions(e.target.value)}
+              className="min-h-[80px] rounded-xl resize-none"
+            />
+          </div>
+
+          {/* Quantity & Add */}
+          <div className="sticky bottom-0 bg-background border-t border-border p-4">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2">
+                <button onClick={() => setQuantity(Math.max(1, effectiveQuantity - 1))} className="w-8 h-8 rounded-full bg-card flex items-center justify-center shadow-sm active:scale-90"><Minus className="w-4 h-4" /></button>
+                <span className="w-6 text-center font-bold">{effectiveQuantity}</span>
+                <button onClick={() => setQuantity(effectiveQuantity + 1)} className="w-8 h-8 rounded-full bg-[#039D55] text-white flex items-center justify-center shadow-sm active:scale-90"><Plus className="w-4 h-4" /></button>
+              </div>
+              <Button onClick={handleAdd} className="flex-1 h-12 rounded-xl bg-[#039D55] hover:bg-[#0E5433] text-white font-semibold text-base shadow-lg shadow-[#039D55]/25">
+                {effectiveShowAdded ? (
+                  <span className="flex items-center gap-2"><CheckCircle2 className="w-5 h-5" />{tuiGlobal('menu.added', 'Added!')}</span>
+                ) : (
+                  `${tuiGlobal('menu.add_to_cart', 'Add to Cart')} • ${formatPrice(totalPrice, currency)}`
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  )
+}
+
+// ─── Cart Drawer ──────────────────────────────────────────────
+function CartDrawer({
+  open,
+  onOpenChange,
+  cart,
+  language,
+  currency,
+  taxRate,
+  serviceCharge,
+  onUpdateQuantity,
+  onRemoveItem,
+  onPlaceOrder,
+  couponCode = '',
+  onCouponCodeChange,
+  appliedPromotion = null,
+  discount = 0,
+  couponError = '',
+  onApplyCoupon,
+  onRemoveCoupon,
+  loyaltyPoints = 0,
+  useLoyaltyPoints = false,
+  loyaltyDiscount = 0,
+  onToggleLoyaltyPoints,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  cart: CartItem[]
+  language: Language
+  currency: string
+  taxRate: number
+  serviceCharge: number
+  onUpdateQuantity: (index: number, qty: number) => void
+  onRemoveItem: (index: number) => void
+  onPlaceOrder: () => void
+  couponCode?: string
+  onCouponCodeChange?: (code: string) => void
+  appliedPromotion?: any
+  discount?: number
+  couponError?: string
+  onApplyCoupon?: () => void
+  onRemoveCoupon?: () => void
+  loyaltyPoints?: number
+  useLoyaltyPoints?: boolean
+  loyaltyDiscount?: number
+  onToggleLoyaltyPoints?: () => void
+}) {
+  const subtotal = cart.reduce((sum, ci) => sum + ci.totalPrice * ci.quantity, 0)
+  const totalDiscount = discount + loyaltyDiscount
+  const discountedSubtotal = Math.max(0, subtotal - totalDiscount)
+  const tax = Math.round(discountedSubtotal * (taxRate || 0.15))
+  const service = Math.round(discountedSubtotal * (serviceCharge || 0))
+  const total = discountedSubtotal + tax + service
+
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="max-h-[85vh]">
+        <DrawerHeader className="border-b border-border">
+          <DrawerTitle className="flex items-center gap-2">
+            <ShoppingCart className="w-5 h-5" />
+            {tuiGlobal('menu.your_cart', 'Your Cart')}
+            <Badge variant="secondary">{cart.length}</Badge>
+          </DrawerTitle>
+        </DrawerHeader>
+
+        {cart.length === 0 ? (
+          <div className="py-12 text-center text-muted-foreground">
+            <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-50" />
+            <p>{tuiGlobal('menu.cart_empty', 'Your cart is empty')}</p>
+          </div>
+        ) : (
+          <>
+            <div className="overflow-y-auto max-h-[50vh] px-4 py-3">
+              {cart.map((ci, index) => (
+                <div key={`${ci.menuItem.id}-${index}`} className="flex items-center gap-3 py-3 border-b border-border/50 last:border-0">
+                  {ci.menuItem.image ? (
+                    <div className="w-14 h-14 rounded-xl overflow-hidden shrink-0">
+                      <img src={ci.menuItem.image} alt={tName(ci.menuItem.name, ci.menuItem.nameAm, ci.menuItem.nameI18n)} className="w-full h-full object-cover" />
+                    </div>
+                  ) : null}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-medium text-sm truncate">{tName(ci.menuItem.name, ci.menuItem.nameAm, ci.menuItem.nameI18n)}</h4>
+                    {ci.selectedModifiers.length > 0 && (
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">
+                        {ci.selectedModifiers.map((m) => tName(m.option.name, m.option.nameAm, m.option.nameI18n)).join(', ')}
+                      </p>
+                    )}
+                    {ci.specialInstructions && (
+                      <p className="text-xs text-orange-600 truncate mt-0.5">📝 {ci.specialInstructions}</p>
+                    )}
+                    <p className="text-sm font-semibold text-[#039D55] mt-1">{formatPrice(ci.totalPrice * ci.quantity, currency)}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => ci.quantity <= 1 ? onRemoveItem(index) : onUpdateQuantity(index, ci.quantity - 1)}
+                      className="w-8 h-8 rounded-full bg-muted flex items-center justify-center active:scale-90"
+                    >
+                      {ci.quantity <= 1 ? <Trash2 className="w-3.5 h-3.5 text-red-500" /> : <Minus className="w-3.5 h-3.5" />}
+                    </button>
+                    <span className="w-5 text-center text-sm font-medium">{ci.quantity}</span>
+                    <button
+                      onClick={() => onUpdateQuantity(index, ci.quantity + 1)}
+                      className="w-8 h-8 rounded-full bg-[#039D55] text-white flex items-center justify-center active:scale-90"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Coupon Code Input */}
+            {!appliedPromotion ? (
+              <div className="px-4 pb-3">
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block flex items-center gap-1">
+                  <Tag className="w-3 h-3" />
+                  {tuiGlobal('menu.have_coupon', 'Have a coupon code?')}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => onCouponCodeChange?.(e.target.value.toUpperCase())}
+                    placeholder={tuiGlobal('menu.enter_code', 'Enter code')}
+                    className="flex-1 h-9 px-3 rounded-lg bg-muted border-0 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-[#039D55]/30"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={onApplyCoupon}
+                    disabled={!couponCode.trim()}
+                    className="h-9 bg-[#039D55] hover:bg-[#0E5433] text-white"
+                  >
+                    {tuiGlobal('menu.apply', 'Apply')}
+                  </Button>
+                </div>
+                {couponError && (
+                  <p className="text-xs text-red-500 mt-1">{couponError}</p>
+                )}
+              </div>
+            ) : (
+              <div className="mx-4 mb-3 flex items-center justify-between p-2.5 rounded-xl bg-[#039D55]/5 border border-[#039D55]/20">
+                <div className="flex items-center gap-2">
+                  <Tag className="w-4 h-4 text-[#039D55]" />
+                  <div>
+                    <p className="text-xs font-medium text-[#039D55]">{appliedPromotion.name}</p>
+                    <p className="text-[10px] text-[#039D55]/70">-{formatPrice(discount, currency)}</p>
+                  </div>
+                </div>
+                <button onClick={onRemoveCoupon} className="p-1 rounded-full hover:bg-[#039D55]/10">
+                  <X className="w-3.5 h-3.5 text-[#039D55]" />
+                </button>
+              </div>
+            )}
+
+            {/* Loyalty Points Toggle */}
+            {loyaltyPoints >= 10 && (
+              <div className="px-4 pb-3">
+                <button
+                  onClick={onToggleLoyaltyPoints}
+                  className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all ${
+                    useLoyaltyPoints
+                      ? 'bg-amber-50 border-amber-200'
+                      : 'bg-card border-border hover:border-amber-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Gift className={`w-4 h-4 ${useLoyaltyPoints ? 'text-amber-600' : 'text-amber-500'}`} />
+                    <div className="text-left">
+                      <p className={`text-xs font-medium ${useLoyaltyPoints ? 'text-amber-700' : ''}`}>
+                        {useLoyaltyPoints
+                          ? tuiGlobal('menu.using_pts', `Using ${Math.floor(loyaltyDiscount / 5)} pts`)
+                          : tuiGlobal('menu.use_pts', `Use ${loyaltyPoints} pts`)}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {useLoyaltyPoints
+                          ? tuiGlobal('menu.save_amount', `Save ${formatPrice(loyaltyDiscount, currency)}`)
+                          : tuiGlobal('menu.save_up_to', `Save up to ${formatPrice(Math.min(loyaltyPoints, Math.floor(subtotal / 5)) * 5, currency)}`)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-10 h-6 rounded-full transition-all flex items-center ${useLoyaltyPoints ? 'bg-amber-500 justify-end' : 'bg-muted justify-start'}`}>
+                    <div className="w-5 h-5 rounded-full bg-white shadow-sm mx-0.5" />
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* Totals */}
+            <div className="border-t border-border px-4 py-3">
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground">{tuiGlobal('menu.subtotal', 'Subtotal')}</span>
+                <span>{formatPrice(subtotal, currency)}</span>
+              </div>
+              {totalDiscount > 0 && (
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-[#039D55] flex items-center gap-1">
+                    <Tag className="w-3 h-3" />
+                    {tuiGlobal('menu.discount', 'Discount')}
+                  </span>
+                  <span className="text-[#039D55]">-{formatPrice(totalDiscount, currency)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm mb-1">
+                <span className="text-muted-foreground">{tuiGlobal('menu.tax', 'Tax')} ({Math.round((taxRate || 0.15) * 100)}%)</span>
+                <span>{formatPrice(tax, currency)}</span>
+              </div>
+              {serviceCharge > 0 && (
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-muted-foreground">{tuiGlobal('menu.service', 'Service')} ({Math.round(serviceCharge * 100)}%)</span>
+                  <span>{formatPrice(service, currency)}</span>
+                </div>
+              )}
+              <Separator />
+              <div className="flex justify-between font-bold mt-2">
+                <span>{tuiGlobal('menu.total', 'Total')}</span>
+                <span className="text-[#039D55]">{formatPrice(total, currency)}</span>
+              </div>
+            </div>
+
+            <DrawerFooter>
+              <Button onClick={onPlaceOrder} className="h-12 rounded-xl bg-[#039D55] hover:bg-[#0E5433] text-white font-semibold text-base shadow-lg shadow-[#039D55]/25">
+                {tuiGlobal('menu.proceed_to_payment', 'Proceed to Payment')} • {formatPrice(total, currency)}
+              </Button>
+            </DrawerFooter>
+          </>
+        )}
+      </DrawerContent>
+    </Drawer>
+  )
+}

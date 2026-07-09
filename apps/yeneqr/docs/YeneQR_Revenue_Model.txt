@@ -1,0 +1,432 @@
+================================================================================
+  YeneQR — Revenue Model & Business Plan
+  Repux Technologies PLC
+  Last Updated: June 2026
+================================================================================
+
+
+TABLE OF CONTENTS
+─────────────────
+1. Revenue Streams Overview
+2. Subscription Plans & Pricing
+3. Transaction Fees
+4. Payment Provider Partnerships
+5. Enterprise & Custom Services
+6. Future Revenue Streams
+7. Revenue Projections
+8. Unit Economics
+
+
+================================================================================
+1. REVENUE STREAMS OVERVIEW
+================================================================================
+
+YeneQR generates revenue through multiple channels:
+
+   PRIMARY (Day 1):
+   ├── Monthly subscription fees (tiered plans)
+   ├── Transaction fees on digital payments (1.5%–2.5%)
+   └── Payment provider referral commissions
+
+   SECONDARY (Month 3–6):
+   ├── Enterprise setup & onboarding fees
+   ├── Custom feature development
+   ├── SMS/notification fees (pass-through + margin)
+   └── Premium AI usage (metered beyond plan limits)
+
+   FUTURE (Month 12+):
+   ├── Supplier marketplace commissions
+   ├── Featured listings & in-platform advertising
+   ├── Anonymized data insights
+   └── White-label licensing to other markets
+
+
+================================================================================
+2. SUBSCRIPTION PLANS & PRICING
+================================================================================
+
+All prices in Ethiopian Birr (ETB). Reference: 1 USD ≈ 130 ETB (June 2026).
+
+─────────────────────────────────────────────────────────────────────────────
+PLAN          | STARTER       | PROFESSIONAL    | ENTERPRISE
+─────────────────────────────────────────────────────────────────────────────
+Price         | Free          | 9,999 ETB/mo    | 24,999 ETB/mo
+              |               | (~$77/mo)       | (~$192/mo)
+              |               |                 | or custom
+─────────────────────────────────────────────────────────────────────────────
+Target        | Small / new   | Mid-range       | Chains, hotels,
+              | restaurants   | restaurants     | multi-branch
+─────────────────────────────────────────────────────────────────────────────
+Branches      | 1             | Up to 3         | Unlimited
+Tables        | Up to 15      | Unlimited       | Unlimited
+Languages     | 3             | All 13          | All 13
+─────────────────────────────────────────────────────────────────────────────
+QR Ordering   | ✅            | ✅              | ✅
+Dashboard     | Basic         | Full            | Full + multi-branch
+Menu Mgmt     | ✅            | ✅              | ✅
+Order Mgmt    | ✅            | ✅              | ✅
+Tables/Floors | Table list    | Floor plan      | Floor plan
+─────────────────────────────────────────────────────────────────────────────
+Payments      | Cash only     | All 4 methods   | All 4 methods
+KDS           | ❌            | ✅              | ✅
+AI Agents     | ❌            | Business +      | All 4 agents
+              |               | Kitchen         | + custom training
+─────────────────────────────────────────────────────────────────────────────
+Promotions    | ❌            | ✅              | ✅
+Loyalty       | ❌            | ✅              | ✅
+Entertainment | ❌            | ✅              | ✅
+Bill Split    | ❌            | ✅              | ✅
+Analytics     | Basic         | Full + export   | Full + comparison
+─────────────────────────────────────────────────────────────────────────────
+Reservations  | ❌            | ✅              | ✅
+Inventory     | ❌            | ✅              | ✅ + auto-linkage
+Delivery      | ❌            | ❌              | ✅
+POS Integ.    | ❌            | ❌              | ✅
+─────────────────────────────────────────────────────────────────────────────
+Staff Mgmt    | 3 staff       | Unlimited       | Unlimited
+Shifts        | ❌            | ✅              | ✅
+Audit Logs    | ❌            | ✅              | ✅
+─────────────────────────────────────────────────────────────────────────────
+Support       | Community     | Email + chat    | Dedicated manager
+SLA           | None          | 99% uptime      | Custom SLA
+─────────────────────────────────────────────────────────────────────────────
+Transaction   | N/A           | 1.5%            | Negotiated
+Fee           | (cash only)   |                 | (0.75%–1.25%)
+─────────────────────────────────────────────────────────────────────────────
+
+
+ANNUAL DISCOUNT: 10% off when paid annually
+  - Professional: 107,990 ETB/year (saves 11,998 ETB)
+  - Enterprise: 269,990 ETB/year (saves 29,998 ETB)
+
+
+PRICING RATIONALE:
+
+  A mid-range restaurant in Addis Ababa generates 30,000–80,000 ETB/day.
+  At 9,999 ETB/month (~333 ETB/day), YeneQR Professional costs less than
+  1% of daily revenue. This is well within the 2-3% technology budget that
+  restaurants typically allocate.
+
+  For context, international competitors charge:
+  - GloriaFood: $0–$99/month (but no Ethiopian payments, no i18n)
+  - Mr Yum: $49–$199/month (but no KDS, no AI, no floor plan)
+  - Sunday: $99–$299/month (but no entertainment, no 13 languages)
+
+  YeneQR at 9,999 ETB (~$77) offers 5x the features at a lower
+  price point — competitive globally and priced appropriately for
+  the Ethiopian market.
+
+
+================================================================================
+3. TRANSACTION FEES
+================================================================================
+
+Transaction fees are YeneQR's highest-margin, most scalable revenue stream.
+They grow automatically as restaurants process more orders — no sales effort
+required.
+
+FEE STRUCTURE:
+
+  Payment Method     | Starter    | Professional | Enterprise
+  ──────────────────|────────────|──────────────|───────────
+  Cash              | Free       | Free         | Free
+  Telebirr          | N/A        | 1.5%         | Negotiated
+  Chapa             | N/A        | 1.5%         | Negotiated
+  CBE Birr          | N/A        | 1.5%         | Negotiated
+  ──────────────────|────────────|──────────────|───────────
+
+  Enterprise negotiated rate: 0.75%–1.25% based on volume.
+
+HOW IT WORKS:
+
+  1. Customer pays 500 ETB via Telebirr
+  2. Payment provider takes their merchant fee (~1.5-2%)
+  3. YeneQR takes 1.5% (7.50 ETB)
+  4. Restaurant receives settlement: 500 - provider fee - YeneQR fee
+
+  Settlement is handled automatically. Restaurant sees a clear
+  breakdown in their payment dashboard: gross, provider fee, YeneQR
+  fee, net settlement.
+
+WHY THIS IS POWERFUL:
+
+  - Zero marginal cost — we don't handle the money, we route it
+  - Scales with customer success — as restaurants grow, we earn more
+  - Predictable — based on order volume, which trends upward
+  - Invisible — deducted from settlement, no separate invoice
+
+
+================================================================================
+4. PAYMENT PROVIDER PARTNERSHIPS
+================================================================================
+
+Beyond our own 1.5% fee, we earn additional revenue from payment providers
+through referral and volume-based programs.
+
+TELEBIRR (Ethio Telecom):
+  - 40M+ users, dominant mobile payment in Ethiopia
+  - Merchant referral commission: 0.3-0.5% of transaction volume
+    we route to Telebirr
+  - Volume bonuses at threshold milestones
+
+CHAPA:
+  - Leading payment gateway, growing rapidly
+  - Revenue share: 0.2-0.4% of transaction volume
+  - Co-marketing opportunities for mutual customer acquisition
+
+CBE BIRR (Commercial Bank of Ethiopia):
+  - Largest bank in Ethiopia by customer base
+  - Merchant onboarding commission: one-time fee per new merchant
+  - Transaction-based commission: 0.2-0.3%
+
+COMBINED PROVIDER INCOME:
+  On top of our 1.5% transaction fee, we earn an additional
+  0.5-1.0% from provider partnerships. This effectively doubles
+  our per-transaction margin.
+
+  Example: 500 ETB transaction
+  - YeneQR fee:        1.5%  =  7.50 ETB
+  - Provider commission: ~0.7% =  3.50 ETB
+  - Total per transaction:        11.00 ETB
+  - Effective margin:   2.2%
+
+
+================================================================================
+5. ENTERPRISE & CUSTOM SERVICES
+================================================================================
+
+Enterprise clients represent high-value, high-margin revenue beyond
+standard subscriptions.
+
+SETUP & ONBOARDING FEE:
+  One-time fee per enterprise client for:
+  - Custom configuration and branding
+  - Data migration from existing systems
+  - Staff training (on-site, 1-2 days)
+  - QR code generation and physical placement consulting
+  - Floor plan design assistance
+
+  Pricing: 15,000–50,000 ETB per client
+  (Based on number of branches and complexity)
+
+CUSTOM FEATURE DEVELOPMENT:
+  Enterprise clients who want features built specifically for them:
+  - Integration with their existing POS system
+  - Custom reporting for their accounting team
+  - Specialized kitchen station configurations
+  - Custom payment settlement workflows
+
+  Pricing: 5,000–25,000 ETB per feature
+  (We already have the platform — custom work is incremental)
+
+PREMIUM AI TRAINING:
+  Train AI agents on the restaurant's specific menu, customer base,
+  and business rules:
+  - Custom menu knowledge base
+  - Restaurant-specific upsell rules
+  - Branded AI personality and greetings
+
+  Pricing: 10,000 ETB one-time + 2,000 ETB/month ongoing
+
+
+================================================================================
+6. FUTURE REVENUE STREAMS
+================================================================================
+
+These unlock as YeneQR reaches scale (100+ restaurants, 6+ months):
+
+SUPPLIER MARKETPLACE (Month 12+):
+  Restaurants buy ingredients, packaging, cleaning supplies, and
+  equipment regularly. YeneQR can become the procurement platform:
+  - "Order Supplies" button in the dashboard
+  - Connect restaurants with vetted suppliers
+  - Commission: 3-5% on each order
+  - Value: Restaurant orders from one place, supplier gets new customers,
+    YeneQR takes a cut of a transaction that was already happening
+
+  Potential: Average restaurant spends 50,000-200,000 ETB/month on
+  supplies. 3% commission = 1,500-6,000 ETB/month per restaurant.
+
+FEATURED LISTINGS & ADVERTISING (Month 9+):
+  - "Popular Near You" placement in customer-facing shared menu pages
+  - "New on YeneQR" featured spot
+  - Push notification promotions to customers
+  - Sponsored recommendations in AI Menu Concierge
+
+  Pricing: 2,000-10,000 ETB/month per restaurant for premium placement
+
+SMS NOTIFICATION FEES (Month 3+):
+  - SMS costs: ~0.30-0.50 ETB per message (Ethio Telecom bulk rate)
+  - Charge restaurant: 1.00 ETB per SMS
+  - Margin: 0.50-0.70 ETB per SMS
+  - A busy restaurant might send 200-500 SMS/month = 100-350 ETB margin
+
+ANONYMIZED DATA INSIGHTS (Month 18+):
+  At scale, aggregate data becomes valuable:
+  - Dining trends by area, cuisine, time
+  - Consumer spending patterns
+  - Market intelligence for food industry
+
+  Buyers: Food suppliers, market researchers, investors, government
+  Pricing: Subscription-based access, 10,000-50,000 ETB/month
+
+WHITE-LABEL LICENSING (Month 24+):
+  License the YeneQR platform to operators in other African markets:
+  - Kenya, Tanzania, Nigeria, Ghana, South Africa
+  - Flat licensing fee + revenue share
+  - We built it once, sell it many times
+
+  Pricing: 50,000 ETB/month + 10% revenue share per market
+
+
+================================================================================
+7. REVENUE PROJECTIONS
+================================================================================
+
+CONSERVATIVE SCENARIO (Year 1):
+
+  Restaurant Acquisition:
+  - Month 1-3: 10 restaurants (free Starter plan)
+  - Month 4-6: 25 restaurants (5 on Professional)
+  - Month 7-9: 50 restaurants (15 on Professional, 2 on Enterprise)
+  - Month 10-12: 80 restaurants (30 on Professional, 5 on Enterprise)
+
+  Year-End Revenue Run Rate:
+
+  Subscription Revenue:
+    30 Professional × 9,999 ETB    = 299,970 ETB/month
+     5 Enterprise × 24,999 ETB     = 124,995 ETB/month
+    ─────────────────────────────────────────────
+    Total MRR (subscription)        = 424,965 ETB/month
+    Annual:                         = 5,099,580 ETB/year
+
+  Transaction Revenue:
+    50 paying restaurants × 40 orders/day × 250 ETB avg × 1.5%
+    = 50 × 40 × 250 × 0.015 = 7,500 ETB/day
+    Monthly: 225,000 ETB
+    Annual: 2,700,000 ETB/year
+
+  Provider Commissions (0.7% on same volume):
+    Monthly: 105,000 ETB
+    Annual: 1,260,000 ETB/year
+
+  Enterprise Setup Fees:
+    7 clients × 25,000 ETB avg = 175,000 ETB/year
+
+  TOTAL YEAR 1 REVENUE: ~9,434,580 ETB (~$72,574 USD)
+
+
+MODERATE SCENARIO (Year 2):
+
+  200 restaurants (80 Professional, 15 Enterprise)
+
+  Subscription MRR:
+    80 × 9,999  = 799,920 ETB/month
+    15 × 24,999 = 374,985 ETB/month
+    Total MRR    = 1,174,905 ETB/month
+    Annual       = 14,098,860 ETB
+
+  Transaction Revenue:
+    95 × 50 × 250 × 0.015 = 17,812 ETB/day = 534,375 ETB/month
+    Annual = 6,412,500 ETB
+
+  Provider Commissions:
+    Annual = 2,992,500 ETB
+
+  Enterprise Setup + Custom:
+    Annual = 625,000 ETB
+
+  TOTAL YEAR 2 REVENUE: ~24,128,860 ETB (~$185,607 USD)
+
+
+AGGRESSIVE SCENARIO (Year 3):
+
+  500 restaurants (200 Professional, 40 Enterprise)
+
+  Subscription MRR:
+    200 × 9,999  = 1,999,800 ETB/month
+     40 × 24,999 = 999,960 ETB/month
+    Total MRR     = 2,999,760 ETB/month
+    Annual        = 35,997,120 ETB
+
+  Transaction Revenue:
+    240 × 60 × 300 × 0.015 = 25,920 ETB/day = 777,600 ETB/month
+    Annual = 9,331,200 ETB
+
+  Provider Commissions:
+    Annual = 4,354,560 ETB
+
+  Enterprise + Marketplace + Other:
+    Annual = 5,000,000 ETB
+
+  TOTAL YEAR 3 REVENUE: ~54,682,880 ETB (~$420,638 USD)
+
+
+================================================================================
+8. UNIT ECONOMICS
+================================================================================
+
+PER RESTAURANT (Professional Plan):
+
+  Monthly Subscription:              9,999 ETB
+  Transaction Revenue (avg):         4,500 ETB  (40 orders × 250 ETB × 1.5% × 30 days)
+  Provider Commission (avg):         2,100 ETB  (0.7% on same volume)
+  ─────────────────────────────────────────────
+  Total Revenue per Restaurant:      16,599 ETB/month
+                                      ~199,188 ETB/year
+
+  Customer Acquisition Cost (CAC):   ~5,000 ETB  (sales effort + demo)
+  Monthly Operating Cost per Rest.:  ~2,000 ETB  (server, support, infra)
+
+  Payback Period: < 1 month
+  LTV (36 months): ~596,964 ETB
+  LTV:CAC Ratio: ~119:1
+
+  Note: CAC is low because restaurants self-sign-up after demo.
+  The PPT presentation is the primary sales tool.
+
+
+PER RESTAURANT (Enterprise Plan):
+
+  Monthly Subscription:              24,999 ETB
+  Transaction Revenue (avg):         9,000 ETB  (80 orders × 375 ETB × 1.5% × 30 days × 3 branches)
+  Provider Commission (avg):         4,200 ETB
+  Setup Fee (one-time):              25,000 ETB
+  ─────────────────────────────────────────────
+  Total Revenue per Enterprise:      38,199 ETB/month
+                                      ~483,388 ETB/year (including setup)
+
+  LTV (36 months): ~1,400,000 ETB
+
+
+================================================================================
+KEY INSIGHTS
+================================================================================
+
+1. Transaction fees will OVERtake subscription revenue by Year 2-3.
+   This is the SaaS flywheel: more restaurants → more transactions →
+   more revenue → invest in product → more restaurants.
+
+2. Provider partnerships effectively DOUBLE per-transaction margin.
+   Always negotiate volume-based commissions when onboarding
+   payment providers.
+
+3. The free Starter plan is a growth hack, not a revenue source.
+   Its purpose is to get restaurants onto the platform. Conversion
+   to Professional happens when they want KDS, AI, or digital payments.
+
+4. Enterprise is the highest-value segment per client but
+   Professional is the volume play. Don't neglect either.
+
+5. The supplier marketplace could become the largest revenue stream
+   long-term. A restaurant spending 100,000 ETB/month on supplies
+   with 3% commission = 3,000 ETB/month — that's 30% of the
+   Professional subscription from an entirely different budget.
+
+6. White-label licensing is exponential. One deal in Kenya could
+   match the entire Ethiopian revenue with zero marginal cost.
+
+
+================================================================================
+END OF DOCUMENT
+================================================================================
