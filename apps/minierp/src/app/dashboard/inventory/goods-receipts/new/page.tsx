@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +15,14 @@ interface OrgNode { id: string; name: string; code: string }
 interface Item { id: string; sku: string; name: string; uom: string; costPrice: number }
 
 export default function NewGoodsReceiptPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center"><p className="text-muted-foreground">Loading…</p></div>}>
+      <NewGoodsReceiptContent />
+    </Suspense>
+  );
+}
+
+function NewGoodsReceiptContent() {
   const router = useRouter();
   const params = useSearchParams();
   const poId = params.get("poId");
