@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e .env --override -- node scripts/custom-server.js",
+    "dev": "dotenv -e .env --override -- next dev -p 3000",
     "build": "dotenv -e .env --override -- next build",
     "start": "dotenv -e .env --override -- next start -p 3100",
     "lint": "eslint .",
