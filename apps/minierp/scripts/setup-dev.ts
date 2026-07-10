@@ -6,7 +6,7 @@
 import { PrismaClient } from "@prisma/client";
 import { execSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { hashPassword } from "better-auth/crypto";
+import bcrypt from "bcryptjs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -53,7 +53,7 @@ async function main() {
   console.log(`  ✓ Tenant: ${tenant.name} (id: ${tenant.id})`);
 
   console.log("\n▶ Step 4-5: Seeding demo users + linking to tenant + setting passwords...");
-  const passwordHash = await hashPassword(DEMO_PASSWORD);
+  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 4);
   for (const demo of DEMO_USERS) {
     const user = await prisma.user.upsert({ where: { email: demo.email }, create: { email: demo.email, name: demo.name, isActive: true }, update: { name: demo.name, isActive: true } });
     await prisma.tenantUser.upsert({ where: { tenantId_userId: { tenantId: tenant.id, userId: user.id } }, create: { tenantId: tenant.id, userId: user.id, role: demo.role, isPrimary: demo.role === "owner", acceptedAt: new Date(), permissions: [] }, update: { role: demo.role, isPrimary: demo.role === "owner" } });
