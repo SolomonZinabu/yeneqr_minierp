@@ -83,6 +83,34 @@ const TENANT_SCOPED_MODELS = [
   "AuditLog",
   "IntegrationEvent",
   "TenantIntegration",
+  "NumberSeries",
+  "NumberSequenceValue",
+  "CustomField",
+  "CustomFieldValue",
+  "InventoryItem",
+  "StockMovement",
+  "Supplier",
+  "PurchaseOrder",
+  "PurchaseOrderLine",
+  "GoodsReceipt",
+  "GoodsReceiptLine",
+  "Stocktake",
+  "StocktakeLine",
+  "StockTransfer",
+  "StockTransferLine",
+  "Wastage",
+  "WastageLine",
+  "ItemCostSnapshot",
+  "BillOfMaterial",
+  "BillOfMaterialLine",
+  "LedgerAccount",
+  "JournalEntry",
+  "JournalLine",
+  "Employee",
+  "AttendanceRecord",
+  "SalaryComponent",
+  "PayrollRun",
+  "PayrollItem",
 ] as const;
 
 type TenantScopedModel = (typeof TENANT_SCOPED_MODELS)[number];
@@ -142,10 +170,9 @@ function buildTenantExtension(model: TenantScopedModel) {
         args.where = { ...where, tenantId };
       }
 
-      // Inject tenantId into data for create / createMany / upsert
-      if (WRITE_OPERATIONS.includes(operation)) {
+      // Inject tenantId into data for create / createMany (NOT upsert — handled below)
+      if (WRITE_OPERATIONS.includes(operation) && operation !== "upsert") {
         if (operation === "createMany" || operation === "createManyAndReturn") {
-          // args.data is an array
           const data = args.data as unknown;
           if (Array.isArray(data)) {
             args.data = data.map((row) => ({ ...row, tenantId }));
@@ -183,6 +210,34 @@ const TENANT_SCOPED_MODELS_CAMEL: Record<TenantScopedModel, string> = {
   AuditLog: "auditLog",
   IntegrationEvent: "integrationEvent",
   TenantIntegration: "tenantIntegration",
+  NumberSeries: "numberSeries",
+  NumberSequenceValue: "numberSequenceValue",
+  CustomField: "customField",
+  CustomFieldValue: "customFieldValue",
+  InventoryItem: "inventoryItem",
+  StockMovement: "stockMovement",
+  Supplier: "supplier",
+  PurchaseOrder: "purchaseOrder",
+  PurchaseOrderLine: "purchaseOrderLine",
+  GoodsReceipt: "goodsReceipt",
+  GoodsReceiptLine: "goodsReceiptLine",
+  Stocktake: "stocktake",
+  StocktakeLine: "stocktakeLine",
+  StockTransfer: "stockTransfer",
+  StockTransferLine: "stockTransferLine",
+  Wastage: "wastage",
+  WastageLine: "wastageLine",
+  ItemCostSnapshot: "itemCostSnapshot",
+  BillOfMaterial: "billOfMaterial",
+  BillOfMaterialLine: "billOfMaterialLine",
+  LedgerAccount: "ledgerAccount",
+  JournalEntry: "journalEntry",
+  JournalLine: "journalLine",
+  Employee: "employee",
+  AttendanceRecord: "attendanceRecord",
+  SalaryComponent: "salaryComponent",
+  PayrollRun: "payrollRun",
+  PayrollItem: "payrollItem",
 };
 
 const tenantExtensionConfig = {

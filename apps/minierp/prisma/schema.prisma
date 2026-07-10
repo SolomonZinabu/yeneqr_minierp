@@ -1,38 +1,65 @@
-// Mini ERP — Phase 0B foundation schema
-// PostgreSQL provider (required by task spec).
-// All tenant-scoped models have a `tenantId` column that is auto-injected
-// by the Prisma $extends client in src/lib/db.ts.
+// Mini ERP — Enterprise schema (Phase 0-3)
+// Dev sandbox uses SQLite (no ICU 60 for embedded-postgres). Production should
+// switch provider to "postgresql" — Json fields work in both. String[] is
+// avoided for cross-DB compat (TenantUser.permissions, ErpPlan.features use Json).
+//
+// All tenant-scoped models have tenantId auto-injected by Prisma $extends in
+// src/lib/db.ts.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-// ── Multi-tenant core ──
+// ───────────────────────────────────────────────────────────────────────────
+// Multi-tenant core (Phase 0)
+// ───────────────────────────────────────────────────────────────────────────
 
 model Tenant {
   id                   String   @id @default(cuid())
-  name                 String // Restaurant chain name, e.g. "Bete Kitchen Group"
-  slug                 String   @unique // URL-friendly identifier
+  name                 String
+  slug                 String   @unique
   currency             String   @default("ETB")
-  taxRate              Float    @default(0.15) // VAT 15% Ethiopia
+  taxRate              Float    @default(0.15)
   erpEnabled           Boolean  @default(true)
-  erpPlanSlug          String   @default("erp_starter") // erp_starter | erp_pro | erp_enterprise
-  erpMonthlyPriceCents Int? // null = use plan default
-  externalYeneqrId     String?  @unique // Link to YeneQR Restaurant.id (null = standalone, no YeneQR)
-  apiKey               String?  @unique // Per-tenant API key for inbound webhooks (e.g. YeneQR → Mini ERP)
-  settings             Json     @default("{}") // flexible per-tenant config
+  erpPlanSlug          String   @default("erp_starter")
+  erpMonthlyPriceCents Int?
+  externalYeneqrId     String?  @unique
+  apiKey               String?  @unique
+  settings             Json
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  users        TenantUser[]
-  orgNodes     OrganizationNode[]
-  auditLogs    AuditLog[]
-  integrations TenantIntegration[]
+  users             TenantUser[]
+  orgNodes          OrganizationNode[]
+  auditLogs         AuditLog[]
+  integrations      TenantIntegration[]
+  integrationEvents IntegrationEvent[]
+  numberSeries      NumberSeries[]
+  numberSeqValues   NumberSequenceValue[]
+  customFields      CustomField[]
+  customFieldValues CustomFieldValue[]
+  inventoryItems    InventoryItem[]
+  stockMovements    StockMovement[]
+  suppliers         Supplier[]
+  purchaseOrders    PurchaseOrder[]
+  goodsReceipts     GoodsReceipt[]
+  stocktakes        Stocktake[]
+  stockTransfers    StockTransfer[]
+  wastages          Wastage[]
+  itemCostSnapshots ItemCostSnapshot[]
+  accounts          LedgerAccount[]
+  journalEntries    JournalEntry[]
+  journalLines      JournalLine[]
+  employees         Employee[]
+  attendanceRecords AttendanceRecord[]
+  salaryComponents  SalaryComponent[]
+  payrollRuns       PayrollRun[]
+  payrollItems      PayrollItem[]
 
   @@index([externalYeneqrId])
 }
@@ -49,18 +76,69 @@ model User {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  tenants TenantUser[]
+  tenants  TenantUser[]
+  accounts Account[]
+  sessions Session[]
 
   @@index([email])
+}
+
+// Better-Auth managed tables
+model Account {
+  id                    String    @id @default(cuid())
+  userId                String
+  accountId             String
+  providerId            String
+  accessToken           String?
+  refreshToken          String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  idToken               String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
 }
 
 model TenantUser {
   id          String    @id @default(cuid())
   tenantId    String
   userId      String
-  role        String    @default("staff") // owner | accountant | manager | chef | waiter | staff
-  isPrimary   Boolean   @default(false) // primary tenant for this user
-  permissions String[]  @default([]) // additional permissions beyond role defaults
+  role        String    @default("staff")
+  isPrimary   Boolean   @default(false)
+  permissions Json
   invitedAt   DateTime?
   acceptedAt  DateTime?
   createdAt   DateTime  @default(now())
@@ -75,20 +153,30 @@ model TenantUser {
 model OrganizationNode {
   id                     String   @id @default(cuid())
   tenantId               String
-  parentId               String? // self-reference for tree (group → branch → kitchen station)
-  name                   String // "Bole Road Branch", "Hot Line Kitchen"
-  code                   String? // short code, e.g. "BOLE"
-  type                   String   @default("branch") // group | branch | kitchen_station | bar | commissary
-  externalYeneqrBranchId String? // link to YeneQR Branch.id
+  parentId               String?
+  name                   String
+  code                   String?
+  type                   String   @default("branch")
+  externalYeneqrBranchId String?
   address                String?
   phone                  String?
   isActive               Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
-  tenant   Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  parent   OrganizationNode?  @relation("OrgTree", fields: [parentId], references: [id])
-  children OrganizationNode[] @relation("OrgTree")
+  tenant              Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent              OrganizationNode?  @relation("OrgTree", fields: [parentId], references: [id])
+  children            OrganizationNode[] @relation("OrgTree")
+  inventoryItems      InventoryItem[]
+  stockMovements      StockMovement[]
+  stockTransfersFrom  StockTransfer[]    @relation("TransferFromNode")
+  stockTransfersTo    StockTransfer[]    @relation("TransferToNode")
+  stocktakes          Stocktake[]
+  wastages            Wastage[]
+  employees           Employee[]
+  attendanceRecords   AttendanceRecord[]
+  purchaseOrders      PurchaseOrder[]
+  goodsReceipts       GoodsReceipt[]
 
   @@unique([tenantId, code])
   @@index([tenantId, parentId])
@@ -99,8 +187,8 @@ model AuditLog {
   id         String   @id @default(cuid())
   tenantId   String
   userId     String?
-  action     String // e.g. "inventory.adjust", "journal.create"
-  entityType String // "InventoryItem", "JournalEntry", etc.
+  action     String
+  entityType String
   entityId   String?
   before     Json?
   after      Json?
@@ -114,34 +202,32 @@ model AuditLog {
   @@index([tenantId, entityType, entityId])
 }
 
-// ── Integration webhook ingestion log ──
-
 model IntegrationEvent {
   id          String    @id @default(cuid())
   tenantId    String
-  provider    String // "yeneqr" | "toast" | "square" | "manual"
-  eventType   String // "order.created", "payment.received", etc.
-  externalId  String? // ID from the source system
-  payload     Json // full webhook payload
-  status      String    @default("received") // received | processed | failed
+  provider    String
+  eventType   String
+  externalId  String?
+  payload     Json
+  status      String    @default("received")
   error       String?
   processedAt DateTime?
   receivedAt  DateTime  @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([provider, externalId])
   @@index([tenantId, status])
   @@index([tenantId, provider, eventType])
 }
 
-// ── Per-tenant integration credentials (e.g. webhook API keys, OAuth tokens) ──
-
 model TenantIntegration {
   id          String   @id @default(cuid())
   tenantId    String
-  provider    String // "yeneqr" | "toast" | "square"
-  externalId  String? // ID of the linked resource in the provider (e.g. YeneQR Restaurant.id)
-  apiKey      String? // API key used to validate inbound webhooks from this provider
-  config      Json     @default("{}")
+  provider    String
+  externalId  String?
+  apiKey      String?
+  config      Json
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -152,18 +238,743 @@ model TenantIntegration {
   @@index([tenantId, isActive])
 }
 
-// ── Subscription plans (mirrors YeneQR pattern) ──
-
 model ErpPlan {
   id               String   @id @default(cuid())
-  slug             String   @unique // "erp_starter" | "erp_pro" | "erp_enterprise"
+  slug             String   @unique
   name             String
   description      String?
-  priceCents       Int // monthly price
+  priceCents       Int
   yearlyPriceCents Int?
-  features         String[] @default([]) // feature tags
+  features         Json
   isActive         Boolean  @default(true)
   sortOrder        Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// SaaS scaffolding
+// ───────────────────────────────────────────────────────────────────────────
+
+model NumberSeries {
+  id           String   @id @default(cuid())
+  tenantId     String
+  code         String
+  name         String
+  prefix       String
+  nextValue    Int      @default(1)
+  padding      Int      @default(5)
+  documentType String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  values NumberSequenceValue[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model NumberSequenceValue {
+  id           String   @id @default(cuid())
+  tenantId     String
+  seriesId     String
+  fiscalYear   Int
+  nextValue    Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  series NumberSeries @relation(fields: [seriesId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, seriesId, fiscalYear])
+  @@index([tenantId, fiscalYear])
+}
+
+model CustomField {
+  id           String   @id @default(cuid())
+  tenantId     String
+  entityType   String
+  fieldKey     String
+  label        String
+  dataType     String   @default("string")
+  options      Json?
+  isRequired   Boolean  @default(false)
+  isFilterable Boolean  @default(false)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  values CustomFieldValue[]
+
+  @@unique([tenantId, entityType, fieldKey])
+  @@index([tenantId, entityType])
+}
+
+model CustomFieldValue {
+  id            String   @id @default(cuid())
+  tenantId      String
+  customFieldId String
+  entityId      String
+  value         Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customField CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@unique([customFieldId, entityId])
+  @@index([tenantId, entityId])
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// PHASE 1 — Inventory / SCM
+// ───────────────────────────────────────────────────────────────────────────
+
+model InventoryItem {
+  id             String   @id @default(cuid())
+  tenantId       String
+  orgNodeId      String?
+  sku            String
+  name           String
+  description    String?
+  category       String?
+  subcategory    String?
+  uom            String   @default("each")
+  itemType       String   @default("ingredient")
+  isStockable    Boolean  @default(true)
+  trackBatch     Boolean  @default(false)
+  trackSerial    Boolean  @default(false)
+  reorderPoint   Float    @default(0)
+  reorderQty     Float    @default(0)
+  costPrice      Float    @default(0)
+  sellPrice      Float    @default(0)
+  taxRate        Float?
+  barcode        String?
+  externalYeneqrMenuItemId String?
+  imageData      String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode        OrganizationNode? @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
+  movements      StockMovement[]
+  poLines        PurchaseOrderLine[]
+  grLines        GoodsReceiptLine[]
+  stocktakeLines StocktakeLine[]
+  transferLines  StockTransferLine[]
+  wastageLines   WastageLine[]
+  costSnapshots  ItemCostSnapshot[]
+  billOfMaterials BillOfMaterial[]      @relation("BomItem")
+  bomIngredients BillOfMaterialLine[]
+
+  @@unique([tenantId, sku])
+  @@index([tenantId, orgNodeId])
+  @@index([tenantId, category])
+  @@index([tenantId, isActive])
+  @@index([externalYeneqrMenuItemId])
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  tenantId      String
+  orgNodeId     String
+  itemId        String
+  movementType  String
+  quantity      Float
+  balanceAfter  Float?
+  unitCost      Float    @default(0)
+  totalCost     Float    @default(0)
+  refType       String?
+  refId         String?
+  batchNo       String?
+  expiryDate    DateTime?
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode OrganizationNode  @relation(fields: [orgNodeId], references: [id], onDelete: Cascade)
+  item    InventoryItem     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orgNodeId, itemId])
+  @@index([tenantId, movementType, createdAt])
+  @@index([tenantId, refType, refId])
+  @@index([itemId, createdAt])
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  tenantId     String
+  code         String
+  name         String
+  legalName    String?
+  taxId        String?
+  contactName  String?
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  region       String?
+  country      String   @default("Ethiopia")
+  paymentTerms String?
+  currency     String   @default("ETB")
+  leadTimeDays Int      @default(0)
+  rating       Int?
+  isActive     Boolean  @default(true)
+  bankAccount  String?
+  bankName     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchaseOrders PurchaseOrder[]
+  goodsReceipts  GoodsReceipt[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isActive])
+}
+
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  tenantId      String
+  orgNodeId     String?
+  supplierId    String
+  poNumber      String
+  status        String   @default("draft")
+  orderDate     DateTime @default(now())
+  expectedDate  DateTime?
+  currency      String   @default("ETB")
+  subtotal      Float    @default(0)
+  taxTotal      Float    @default(0)
+  discountTotal Float    @default(0)
+  totalAmount   Float    @default(0)
+  notes         String?
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode       OrganizationNode? @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
+  supplier      Supplier          @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  lines         PurchaseOrderLine[]
+  goodsReceipts GoodsReceipt[]
+
+  @@unique([tenantId, poNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, supplierId])
+  @@index([tenantId, orderDate])
+}
+
+model PurchaseOrderLine {
+  id            String   @id @default(cuid())
+  tenantId      String
+  purchaseOrderId String
+  itemId        String
+  lineNo        Int
+  quantity      Float
+  uom           String
+  unitCost      Float
+  taxRate       Float   @default(0)
+  discountPct   Float   @default(0)
+  lineTotal     Float
+  receivedQty   Float   @default(0)
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  purchaseOrder PurchaseOrder  @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  item          InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, purchaseOrderId])
+  @@index([itemId])
+}
+
+model GoodsReceipt {
+  id            String   @id @default(cuid())
+  tenantId      String
+  orgNodeId     String
+  supplierId    String?
+  purchaseOrderId String?
+  grnNumber     String
+  status        String   @default("draft")
+  receiptDate   DateTime @default(now())
+  invoiceNumber String?
+  invoiceDate   DateTime?
+  currency      String   @default("ETB")
+  subtotal      Float    @default(0)
+  taxTotal      Float    @default(0)
+  totalAmount   Float    @default(0)
+  notes         String?
+  createdBy     String?
+  journalEntryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant         Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode        OrganizationNode  @relation(fields: [orgNodeId], references: [id], onDelete: Cascade)
+  supplier       Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchaseOrder  PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  lines          GoodsReceiptLine[]
+
+  @@unique([tenantId, grnNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, supplierId])
+  @@index([tenantId, receiptDate])
+}
+
+model GoodsReceiptLine {
+  id            String   @id @default(cuid())
+  tenantId      String
+  goodsReceiptId String
+  poLineId      String?
+  itemId        String
+  lineNo        Int
+  quantityOrdered Float?
+  quantityReceived Float
+  quantityRejected Float  @default(0)
+  uom           String
+  unitCost      Float
+  taxRate       Float   @default(0)
+  lineTotal     Float
+  batchNo       String?
+  expiryDate    DateTime?
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  goodsReceipt GoodsReceipt   @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  item         InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, goodsReceiptId])
+  @@index([itemId])
+}
+
+model Stocktake {
+  id           String   @id @default(cuid())
+  tenantId     String
+  orgNodeId    String
+  stocktakeNumber String
+  status       String   @default("draft")
+  countDate    DateTime @default(now())
+  postedDate   DateTime?
+  notes        String?
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode OrganizationNode @relation(fields: [orgNodeId], references: [id], onDelete: Cascade)
+  lines   StocktakeLine[]
+
+  @@unique([tenantId, stocktakeNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, orgNodeId])
+}
+
+model StocktakeLine {
+  id            String   @id @default(cuid())
+  tenantId      String
+  stocktakeId   String
+  itemId        String
+  systemQty     Float
+  countedQty    Float
+  variance      Float
+  unitCost      Float   @default(0)
+  varianceValue Float   @default(0)
+  reasonCode    String?
+  notes         String?
+
+  stocktake Stocktake      @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  item      InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, stocktakeId])
+  @@index([itemId])
+}
+
+model StockTransfer {
+  id            String   @id @default(cuid())
+  tenantId      String
+  transferNumber String
+  status        String   @default("draft")
+  fromOrgNodeId String
+  toOrgNodeId   String
+  transferDate  DateTime @default(now())
+  receivedDate  DateTime?
+  notes         String?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fromOrgNode  OrganizationNode  @relation("TransferFromNode", fields: [fromOrgNodeId], references: [id], onDelete: Cascade)
+  toOrgNode    OrganizationNode  @relation("TransferToNode", fields: [toOrgNodeId], references: [id], onDelete: Cascade)
+  lines        StockTransferLine[]
+
+  @@unique([tenantId, transferNumber])
+  @@index([tenantId, status])
+  @@index([fromOrgNodeId])
+  @@index([toOrgNodeId])
+}
+
+model StockTransferLine {
+  id             String   @id @default(cuid())
+  tenantId       String
+  stockTransferId String
+  itemId         String
+  lineNo         Int
+  quantity       Float
+  uom            String
+  unitCost       Float
+  lineTotal      Float
+  receivedQty    Float   @default(0)
+  notes          String?
+
+  stockTransfer StockTransfer  @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  item          InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, stockTransferId])
+  @@index([itemId])
+}
+
+model Wastage {
+  id            String   @id @default(cuid())
+  tenantId      String
+  orgNodeId     String
+  wastageNumber String
+  status        String   @default("draft")
+  wastageDate   DateTime @default(now())
+  wastageType   String   @default("spoilage")
+  totalValue    Float    @default(0)
+  notes         String?
+  createdBy     String?
+  journalEntryId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant  Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode OrganizationNode @relation(fields: [orgNodeId], references: [id], onDelete: Cascade)
+  lines   WastageLine[]
+
+  @@unique([tenantId, wastageNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, wastageDate])
+}
+
+model WastageLine {
+  id            String   @id @default(cuid())
+  tenantId      String
+  wastageId     String
+  itemId        String
+  lineNo        Int
+  quantity      Float
+  uom           String
+  unitCost      Float
+  lineTotal     Float
+  reasonCode    String?
+  notes         String?
+
+  wastage Wastage        @relation(fields: [wastageId], references: [id], onDelete: Cascade)
+  item    InventoryItem  @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, wastageId])
+  @@index([itemId])
+}
+
+model ItemCostSnapshot {
+  id         String   @id @default(cuid())
+  tenantId   String
+  orgNodeId  String
+  itemId     String
+  qtyOnHand  Float
+  unitCost   Float
+  totalValue Float
+  snapshotDate DateTime @default(now())
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item    InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, orgNodeId, itemId, snapshotDate])
+  @@index([tenantId, orgNodeId, itemId])
+}
+
+model BillOfMaterial {
+  id           String   @id @default(cuid())
+  tenantId     String
+  itemId       String
+  name         String
+  yieldQty     Float   @default(1)
+  yieldUom     String  @default("each")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  item  InventoryItem          @relation("BomItem", fields: [itemId], references: [id], onDelete: Cascade)
+  lines BillOfMaterialLine[]
+
+  @@index([tenantId, itemId])
+}
+
+model BillOfMaterialLine {
+  id           String   @id @default(cuid())
+  tenantId     String
+  bomId        String
+  itemId       String
+  quantity     Float
+  uom          String
+  notes        String?
+
+  bom        BillOfMaterial  @relation(fields: [bomId], references: [id], onDelete: Cascade)
+  ingredient InventoryItem   @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([bomId])
+  @@index([itemId])
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// PHASE 2 — Finance / GL
+// ───────────────────────────────────────────────────────────────────────────
+
+model LedgerAccount {
+  id           String   @id @default(cuid())
+  tenantId     String
+  code         String
+  name         String
+  type         String
+  subtype      String?
+  isSystem     Boolean  @default(false)
+  isControl    Boolean  @default(false)
+  parentCode   String?
+  description  String?
+  isActive     Boolean  @default(true)
+  openingBalance Float  @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalLines JournalLine[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, type])
+  @@index([tenantId, parentCode])
+}
+
+model JournalEntry {
+  id            String   @id @default(cuid())
+  tenantId      String
+  entryNumber   String
+  entryDate     DateTime @default(now())
+  periodId      String?
+  source        String?
+  sourceRefId   String?
+  description   String?
+  status        String   @default("draft")
+  isReversed    Boolean  @default(false)
+  reversedByEntryId String?
+  totalDebit    Float    @default(0)
+  totalCredit   Float    @default(0)
+  postedBy      String?
+  postedAt      DateTime?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  lines  JournalLine[]
+
+  @@unique([tenantId, entryNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, entryDate])
+  @@index([tenantId, source, sourceRefId])
+  @@index([tenantId, periodId])
+}
+
+model JournalLine {
+  id            String   @id @default(cuid())
+  tenantId      String
+  journalEntryId String
+  accountId     String
+  lineNo        Int
+  description   String?
+  debit         Float   @default(0)
+  credit        Float   @default(0)
+  entityType    String?
+  entityId      String?
+  createdAt     DateTime @default(now())
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, journalEntryId])
+  @@index([tenantId, accountId])
+  @@index([entityType, entityId])
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// PHASE 3 — HR / Payroll (Ethiopian compliance)
+// ───────────────────────────────────────────────────────────────────────────
+
+model Employee {
+  id               String   @id @default(cuid())
+  tenantId         String
+  orgNodeId        String?
+  employeeNumber   String
+  firstName        String
+  middleName       String?
+  lastName         String
+  fullName         String
+  gender           String?
+  dateOfBirth      DateTime?
+  nationality      String   @default("Ethiopian")
+  maritalStatus    String?
+  idNumber         String?
+  tinNumber        String?
+  pensionNumber    String?
+  phone            String?
+  email            String?
+  address          String?
+  emergencyContact String?
+  emergencyPhone   String?
+  hireDate         DateTime @default(now())
+  probationEndDate DateTime?
+  terminationDate  DateTime?
+  terminationReason String?
+  employmentType   String   @default("permanent")
+  jobTitle         String?
+  department       String?
+  payGrade         String?
+  employmentStatus String   @default("active")
+  bankAccount      String?
+  bankName         String?
+  baseSalary       Float    @default(0)
+  currency         String   @default("ETB")
+  payFrequency     String   @default("monthly")
+  taxExemptionAmount Float  @default(0)
+  allowsOvertime   Boolean  @default(false)
+  isActive         Boolean  @default(true)
+  userId           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant           Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  orgNode          OrganizationNode?   @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
+  attendanceRecords AttendanceRecord[]
+  payrollItems     PayrollItem[]
+
+  @@unique([tenantId, employeeNumber])
+  @@index([tenantId, orgNodeId])
+  @@index([tenantId, employmentStatus])
+  @@index([tenantId, department])
+}
+
+model AttendanceRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  employeeId  String
+  orgNodeId   String?
+  date        DateTime
+  checkIn     DateTime?
+  checkOut    DateTime?
+  workedHours Float   @default(0)
+  otHoursRegular Float @default(0)
+  otHoursRest Float   @default(0)
+  otHoursPublic Float @default(0)
+  status      String   @default("present")
+  leaveType   String?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  orgNode  OrganizationNode? @relation(fields: [orgNodeId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, employeeId, date])
+  @@index([tenantId, date])
+  @@index([employeeId, date])
+}
+
+model SalaryComponent {
+  id            String   @id @default(cuid())
+  tenantId      String
+  code          String
+  name          String
+  type          String
+  category      String?
+  calcType      String   @default("formula")
+  formula       String?
+  amount        Float?
+  isTaxable     Boolean  @default(false)
+  isPensionable Boolean  @default(false)
+  affectsCostOfSales Boolean @default(false)
+  glAccountId   String?
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, type])
+}
+
+model PayrollRun {
+  id            String   @id @default(cuid())
+  tenantId      String
+  runNumber     String
+  period        String
+  startDate     DateTime
+  endDate       DateTime
+  payDate       DateTime
+  status        String   @default("draft")
+  totalGross    Float    @default(0)
+  totalTax      Float    @default(0)
+  totalPension  Float    @default(0)
+  totalDeductions Float  @default(0)
+  totalNet      Float    @default(0)
+  totalEmployerContribution Float @default(0)
+  employeeCount Int      @default(0)
+  journalEntryId String?
+  approvedBy    String?
+  approvedAt    DateTime?
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  items  PayrollItem[]
+
+  @@unique([tenantId, runNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, period])
+}
+
+model PayrollItem {
+  id            String   @id @default(cuid())
+  tenantId      String
+  payrollRunId  String
+  employeeId    String
+  basicSalary   Float   @default(0)
+  grossEarnings Float   @default(0)
+  taxableIncome Float   @default(0)
+  taxAmount     Float   @default(0)
+  pensionEmployee Float @default(0)
+  pensionEmployer Float @default(0)
+  totalDeductions Float @default(0)
+  netPay        Float   @default(0)
+  otAmount      Float   @default(0)
+  details       Json
+  createdAt     DateTime @default(now())
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  payrollRun PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employee Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([payrollRunId, employeeId])
+  @@index([tenantId, employeeId])
 }
