@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "dotenv -e .env --override -- next dev -p 3100",
+    "dev": "dotenv -e .env --override -- next dev -p 3000",
     "build": "dotenv -e .env --override -- next build",
     "start": "dotenv -e .env --override -- next start -p 3100",
     "lint": "eslint .",
@@ -17,6 +17,7 @@
     "db:migrate:status": "dotenv -e .env --override -- prisma migrate status",
     "db:reset": "dotenv -e .env --override -- prisma migrate reset",
     "db:studio": "dotenv -e .env --override -- prisma studio",
+    "db:setup": "dotenv -e .env --override -- tsx scripts/setup-dev.ts",
     "db:start": "node scripts/start-embedded-postgres.js",
     "postinstall": "prisma generate"
   },
