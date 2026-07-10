@@ -28,19 +28,13 @@ export function Topbar() {
     router.refresh();
   }
 
-  const initials = user?.name
-    ? user.name
-        .split(" ")
-        .map((p) => p[0])
-        .slice(0, 2)
-        .join("")
-        .toUpperCase()
-    : user?.email?.slice(0, 2).toUpperCase() ?? "?";
+  const initials = user?.user.name
+    ? user.user.name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase()
+    : user?.user.email?.slice(0, 2).toUpperCase() ?? "?";
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b bg-white px-4 md:px-6">
       <TenantSwitcher />
-
       <div className="ml-auto flex items-center gap-2">
         {isLoading ? (
           <div className="h-8 w-8 animate-pulse rounded-full bg-slate-200" />
@@ -48,22 +42,15 @@ export function Topbar() {
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm" className="gap-2">
-                <Avatar className="h-7 w-7">
-                  <AvatarFallback className="text-xs">
-                    {initials}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="hidden text-sm font-medium sm:inline">
-                  {user.name ?? user.email}
-                </span>
+                <Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{initials}</AvatarFallback></Avatar>
+                <span className="hidden text-sm font-medium sm:inline">{user.user.name ?? user.user.email}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel>
-                <p className="text-sm font-medium">{user.name ?? "Account"}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {user.email}
-                </p>
+                <p className="text-sm font-medium">{user.user.name ?? "Account"}</p>
+                <p className="truncate text-xs text-muted-foreground">{user.user.email}</p>
+                <p className="mt-1 text-xs text-muted-foreground capitalize">{user.role} · {user.permissions.length} permissions</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem disabled>
