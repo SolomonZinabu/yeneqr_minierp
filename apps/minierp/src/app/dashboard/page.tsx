@@ -1,18 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function DashboardPage() {
-  const router = useRouter();
   const { user, isLoading } = useCurrentUser();
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     if (!isLoading) {
       if (!user) {
-        // Not logged in — go to login
         window.location.href = "/login";
       } else {
         setAuthChecked(true);

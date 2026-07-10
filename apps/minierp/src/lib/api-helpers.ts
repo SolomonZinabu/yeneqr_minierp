@@ -1,9 +1,8 @@
 // src/lib/api-helpers.ts
-// Shared helpers for authenticated API routes with permission-based RBAC.
-// Uses JWT auth (matching YeneQR's pattern), NOT Better-Auth.
+// Uses JWT from Authorization header (like YeneQR). NO COOKIES.
 
 import { NextRequest, NextResponse } from "next/server";
-import { getSession, type TokenPayload } from "./jwt-auth";
+import { getSession } from "./jwt-auth";
 import { db, dbRaw, runWithTenant } from "./db";
 import { assertErpEnabled } from "./erp-gate";
 
@@ -33,30 +32,21 @@ export function withTenant<T = unknown>(handler: ApiHandler<T>) {
         params = raw ?? {};
       }
 
-      // 1) JWT session check
       const session = await getSession(req);
       if (!session) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
 
-      // 2) Tenant from JWT token (already embedded at login)
       const tenantId = session.tenantId;
-      if (!tenantId) {
-        return NextResponse.json({ error: "No tenant in token" }, { status: 400 });
-      }
-
       const tenant = await dbRaw.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) return NextResponse.json({ error: "Tenant not found" }, { status: 404 });
 
-      // 3) ERP gate
       const gate = assertErpEnabled(tenant);
       if (!gate.ok) return gate.response!;
 
-      // 4) Permissions from JWT
       const permissions = new Set(session.permissions || []);
       const hasPermission = (perm: string) => permissions.has(perm);
 
-      // 5) Run handler inside tenant context
       const result = await runWithTenant(tenantId, () =>
         handler({
           req, params,

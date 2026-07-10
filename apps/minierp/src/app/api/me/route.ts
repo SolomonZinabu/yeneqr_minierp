@@ -1,4 +1,4 @@
-// GET /api/auth/me — returns current user from JWT (replaces Better-Auth)
+// GET /api/me — reads JWT from Authorization header (NOT cookies)
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/jwt-auth";
 import { dbRaw } from "@/lib/db";
@@ -9,7 +9,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Fetch tenant details for the response
   const tenant = await dbRaw.tenant.findUnique({
     where: { id: payload.tenantId },
     select: { id: true, name: true, slug: true, currency: true, erpPlanSlug: true },

@@ -13,20 +13,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { LogOut, User as UserIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { logout } from "@/hooks/use-current-user";
 
 export function Topbar() {
   const { user, isLoading } = useCurrentUser();
-  const router = useRouter();
 
   async function handleSignOut() {
-    // Clear JWT cookie by setting it expired
-    document.cookie = "merp_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=None; Secure";
-    document.cookie = "mini-tenant-id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=None; Secure";
+    logout(); // Clears localStorage
     toast.success("Signed out");
-    router.push("/login");
-    router.refresh();
+    window.location.href = "/login";
   }
 
   const initials = user?.user.name
