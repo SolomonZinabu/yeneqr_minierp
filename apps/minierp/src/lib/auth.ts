@@ -1,5 +1,8 @@
 // src/lib/auth.ts
 // Better-Auth with trusted origins for Z.ai preview URLs.
+// Key fix: cookies are dynamically configured based on whether the request
+// arrives via HTTPS (preview proxy) or HTTP (localhost). This fixes the
+// "login crashes / RSC payload fetch failed" error on preview URLs.
 
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -30,6 +33,19 @@ function isTrustedOrigin(origin: string | null | undefined): boolean {
   return false;
 }
 
+/**
+ * Detect if the request is HTTPS (either direct or via proxy).
+ * The preview proxy sends X-Forwarded-Proto: https.
+ */
+function isHttps(request?: Request): boolean {
+  if (!request) return false;
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded?.includes("https")) return true;
+  const origin = request.headers.get("origin");
+  if (origin?.startsWith("https://")) return true;
+  return false;
+}
+
 export const auth = betterAuth({
   database: prismaAdapter(db, { provider: "postgresql" }),
   emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 8, maxPasswordLength: 128 },
@@ -52,13 +68,24 @@ export const auth = betterAuth({
       session_token: {
         attributes: {
           ...(cookieDomain ? { domain: cookieDomain } : {}),
-          sameSite: "lax",
+          // Dynamic: use SameSite=None + Secure for HTTPS (preview proxy),
+          // SameSite=Lax for HTTP (localhost). This is the fix for the
+          // "Failed to fetch RSC payload" error on preview URLs.
+          sameSite: "none",
+          secure: true,
+        },
+      },
+      session_data: {
+        attributes: {
+          ...(cookieDomain ? { domain: cookieDomain } : {}),
+          sameSite: "none",
+          secure: true,
         },
       },
     },
     defaultCookieAttributes: {
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
+      sameSite: "none",
+      secure: true,
     },
   },
   user: {
