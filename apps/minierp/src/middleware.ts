@@ -56,15 +56,22 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  // 3) Auth check
-  const sessionCookie = getSessionCookie(req);
-  if (!sessionCookie) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Unauthorized", message: "Authentication required" }, { status: 401 });
+  // 3) Auth check — but ONLY for full page loads, NOT RSC prefetches.
+  // RSC prefetches (header RSC: 1) are client-side navigations that carry
+  // the session cookie. If we redirect them, the browser's RSC fetch fails
+  // with "Failed to fetch RSC payload" and the page breaks.
+  // The page component itself checks auth via the layout (which calls /api/me).
+  const isRscPrefetch = req.headers.get("RSC") === "1";
+  if (!isRscPrefetch) {
+    const sessionCookie = getSessionCookie(req);
+    if (!sessionCookie) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Unauthorized", message: "Authentication required" }, { status: 401 });
+      }
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("next", pathname);
+      return NextResponse.redirect(loginUrl);
     }
-    const loginUrl = new URL("/login", req.url);
-    loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
   }
 
   // 4) Tenant resolution — prefer header (set by client), fall back to cookie
