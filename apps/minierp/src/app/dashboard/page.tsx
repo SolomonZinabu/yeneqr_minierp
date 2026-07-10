@@ -7,16 +7,20 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isLoading } = useCurrentUser();
-  const [redirected, setRedirected] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user && !redirected) {
-      setRedirected(true);
-      router.push("/login");
+    if (!isLoading) {
+      if (!user) {
+        // Not logged in — go to login
+        window.location.href = "/login";
+      } else {
+        setAuthChecked(true);
+      }
     }
-  }, [isLoading, user, redirected, router]);
+  }, [isLoading, user]);
 
-  if (isLoading || !user) {
+  if (isLoading || !authChecked || !user) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-sm text-muted-foreground">Loading...</div>
