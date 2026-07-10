@@ -59,6 +59,9 @@ export async function middleware(req: NextRequest) {
   // 3) Auth check
   const sessionCookie = getSessionCookie(req);
   if (!sessionCookie) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized", message: "Authentication required" }, { status: 401 });
+    }
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);

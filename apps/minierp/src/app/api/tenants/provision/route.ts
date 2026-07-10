@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
             tenantId: existingTenant.id,
             provider: "yeneqr",
             externalId: yeneqrRestaurantId,
-            apiKey,
+            apiKey, config: {},
             isActive: true,
           },
         });
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         tenantId: existingTenant.id,
-        apiKey: integration.apiKey,
+        apiKey: integration.apiKey, config: {},
         webhookUrl: `${process.env.BETTER_AUTH_URL ?? "http://localhost:3100"}/api/integrations/yeneqr/webhook`,
         reProvisioned: true,
       });
@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
             taxRate,
             erpEnabled: true,
             erpPlanSlug: planSlug,
-            externalYeneqrId: yeneqrRestaurantId,
+            externalYeneqrId: yeneqrRestaurantId, settings: {},
           },
         });
 
@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
             userId: owner.id,
             role: "owner",
             isPrimary: true,
-            acceptedAt: new Date(),
+            acceptedAt: new Date(), permissions: [],
           },
         });
 
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
             tenantId: tenant.id,
             provider: "yeneqr",
             externalId: yeneqrRestaurantId,
-            apiKey,
+            apiKey, config: {},
             isActive: true,
           },
         });
@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         tenantId: result.tenant.id,
-        apiKey: result.apiKey,
+        apiKey: result.apiKey, config: {},
         webhookUrl: `${process.env.BETTER_AUTH_URL ?? "http://localhost:3100"}/api/integrations/yeneqr/webhook`,
         provisioned: true,
       },

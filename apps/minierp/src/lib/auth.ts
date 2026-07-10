@@ -1,66 +1,69 @@
 // src/lib/auth.ts
-// Better-Auth server-side configuration.
-//
-// - Prisma adapter (PostgreSQL)
-// - Email & password auth
-// - Organization plugin (used to model tenants in Better-Auth's data model;
-//   our application-level multi-tenancy lives in the `Tenant` Prisma model —
-//   the organization plugin is here for future SSO / shared-session features
-//   and to mirror YeneQR's auth shape).
-// - Shared secret with YeneQR for cross-subdomain SSO cookie.
+// Better-Auth with trusted origins for Z.ai preview URLs.
 
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { organization } from "better-auth/plugins";
-
 import { db } from "./db";
 
-const secret =
-  process.env.BETTER_AUTH_SECRET ??
-  "minierp-dev-secret-REPLACE-IN-PROD-32chars-min";
-const baseURL =
-  process.env.BETTER_AUTH_URL ?? "http://localhost:3100";
-const cookieDomain = process.env.COOKIE_DOMAIN ?? "localhost";
+const secret = process.env.BETTER_AUTH_SECRET ?? "minierp-dev-secret-REPLACE-IN-PROD-32chars-min";
+const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
+
+const STATIC_TRUSTED_ORIGINS = new Set<string>([
+  baseURL,
+  "http://localhost:3000", "http://127.0.0.1:3000",
+  "http://localhost:3100", "http://127.0.0.1:3100",
+]);
+if (process.env.TRUSTED_ORIGINS) {
+  for (const o of process.env.TRUSTED_ORIGINS.split(",")) {
+    const trimmed = o.trim();
+    if (trimmed) STATIC_TRUSTED_ORIGINS.add(trimmed);
+  }
+}
+
+function isTrustedOrigin(origin: string | null | undefined): boolean {
+  if (!origin) return false;
+  if (STATIC_TRUSTED_ORIGINS.has(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return true;
+  if (/^https:\/\/preview-[a-z0-9-]+\.space-z\.ai$/.test(origin)) return true;
+  return false;
+}
 
 export const auth = betterAuth({
-  database: prismaAdapter(db, {
-    provider: "postgresql",
-  }),
-  emailAndPassword: {
-    enabled: true,
-    autoSignIn: true,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
-  },
+  database: prismaAdapter(db, { provider: "postgresql" }),
+  emailAndPassword: { enabled: true, autoSignIn: true, minPasswordLength: 8, maxPasswordLength: 128 },
   plugins: [organization()],
   session: {
-    expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // refresh session once per day
-    cookieCache: {
-      enabled: true,
-      maxAge: 5 * 60, // cache session for 5 minutes
-    },
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+    cookieCache: { enabled: true, maxAge: 5 * 60 },
   },
   secret,
   baseURL,
+  trustedOrigins: (request?: Request): string[] => {
+    const trusted = [...STATIC_TRUSTED_ORIGINS];
+    const origin = request?.headers.get("origin");
+    if (origin && isTrustedOrigin(origin)) trusted.push(origin);
+    return trusted;
+  },
   advanced: {
     cookies: {
       session_token: {
         attributes: {
-          domain: cookieDomain,
+          ...(cookieDomain ? { domain: cookieDomain } : {}),
           sameSite: "lax",
         },
       },
     },
+    defaultCookieAttributes: {
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+    },
   },
   user: {
     additionalFields: {
-      // Mirror our Prisma User model's custom fields into the Better-Auth user.
-      isActive: {
-        type: "boolean",
-        required: false,
-        defaultValue: true,
-      },
+      isActive: { type: "boolean", required: false, defaultValue: true },
     },
   },
 });
