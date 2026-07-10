@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
-  devIndicator: false,
+  devIndicators: false,
   // Domain suffix patterns — matches ANY subdomain of space-z.ai
   // (preview-chat-xxx.space-z.ai, preview-xxx.space-z.ai, etc.)
   allowedDevOrigins: [

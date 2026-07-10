@@ -1,11 +1,11 @@
 // src/lib/api-helpers.ts
 // Shared helpers for authenticated API routes with permission-based RBAC.
+// Uses JWT auth (matching YeneQR's pattern), NOT Better-Auth.
 
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db, dbRaw, runWithTenant } from "@/lib/db";
-import { assertErpEnabled } from "@/lib/erp-gate";
-import { getEffectivePermissions } from "@/lib/permissions";
+import { getSession, type TokenPayload } from "./jwt-auth";
+import { db, dbRaw, runWithTenant } from "./db";
+import { assertErpEnabled } from "./erp-gate";
 
 export interface ApiContext {
   req: NextRequest;
@@ -32,27 +32,37 @@ export function withTenant<T = unknown>(handler: ApiHandler<T>) {
           : segmentParams as Record<string, string>;
         params = raw ?? {};
       }
-      const session = await auth.api.getSession({ headers: req.headers });
-      if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      const tenantId = req.headers.get("x-tenant-id");
-      if (!tenantId) return NextResponse.json({ error: "No tenant selected. Set the mini-tenant-id cookie or x-tenant-id header." }, { status: 400 });
+
+      // 1) JWT session check
+      const session = await getSession(req);
+      if (!session) {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
+      // 2) Tenant from JWT token (already embedded at login)
+      const tenantId = session.tenantId;
+      if (!tenantId) {
+        return NextResponse.json({ error: "No tenant in token" }, { status: 400 });
+      }
+
       const tenant = await dbRaw.tenant.findUnique({ where: { id: tenantId } });
       if (!tenant) return NextResponse.json({ error: "Tenant not found" }, { status: 404 });
-      const tenantUser = await dbRaw.tenantUser.findUnique({ where: { tenantId_userId: { tenantId, userId: session.user.id } } });
-      if (!tenantUser) return NextResponse.json({ error: "You are not a member of this tenant" }, { status: 403 });
+
+      // 3) ERP gate
       const gate = assertErpEnabled(tenant);
       if (!gate.ok) return gate.response!;
-      const userExtraPerms = Array.isArray(tenantUser.permissions)
-        ? (tenantUser.permissions as unknown as string[]).filter((p): p is string => typeof p === "string")
-        : [];
-      const permissions = getEffectivePermissions(tenantUser.role, userExtraPerms);
+
+      // 4) Permissions from JWT
+      const permissions = new Set(session.permissions || []);
       const hasPermission = (perm: string) => permissions.has(perm);
+
+      // 5) Run handler inside tenant context
       const result = await runWithTenant(tenantId, () =>
         handler({
           req, params,
           tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, currency: tenant.currency, taxRate: tenant.taxRate, erpPlanSlug: tenant.erpPlanSlug, erpEnabled: tenant.erpEnabled },
-          user: { id: session.user.id, email: session.user.email, name: session.user.name ?? null },
-          role: tenantUser.role, permissions, hasPermission,
+          user: { id: session.userId, email: session.email, name: null },
+          role: session.role, permissions, hasPermission,
         }),
       );
       return result as Response | NextResponse<T>;
@@ -73,7 +83,7 @@ function isHttpError(e: unknown): e is HttpError { return e instanceof HttpError
 
 export function requirePermission(ctx: ApiContext, permission: string): void {
   if (!ctx.hasPermission(permission)) {
-    throw new HttpError(403, `Forbidden — you need the "${permission}" permission. Your role "${ctx.role}" doesn't grant this.`);
+    throw new HttpError(403, `Forbidden — you need the "${permission}" permission.`);
   }
 }
 

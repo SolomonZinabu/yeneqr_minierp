@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { authClient } from "@/lib/auth-client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,20 +33,34 @@ export default function LoginPage() {
 
   async function handleSubmit(e?: React.FormEvent) {
     e?.preventDefault();
-    const signInEmail = email, signInPassword = password;
-    if (!signInEmail || !signInPassword) return;
+    if (!email || !password) return;
     setLoading(true);
     try {
-      const { error } = await authClient.signIn.email({ email: signInEmail, password: signInPassword });
-      if (error) { toast.error(error.message ?? "Sign-in failed"); return; }
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Sign-in failed");
+        return;
+      }
       toast.success("Welcome back");
-      router.push(next); router.refresh();
-    } catch (err) { console.error("[LOGIN_ERROR]", err); toast.error("Something went wrong"); }
-    finally { setLoading(false); }
+      router.push(next);
+      router.refresh();
+    } catch (err) {
+      console.error("[LOGIN_ERROR]", err);
+      toast.error("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function pickDemo(account: DemoAccount) {
-    setEmail(account.email); setPassword(account.password); setSelectedDemo(account.email);
+    setEmail(account.email);
+    setPassword(account.password);
+    setSelectedDemo(account.email);
   }
 
   return (
@@ -63,18 +76,17 @@ export default function LoginPage() {
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" placeholder="owner@restaurant.com" value={email} onChange={(e) => { setEmail(e.target.value); setSelectedDemo(null); }} required disabled={loading} autoComplete="email" autoFocus />
+                <Input id="email" type="email" placeholder="owner@restaurant.com" value={email} onChange={(e) => { setEmail(e.target.value); setSelectedDemo(null); }} required disabled={loading} autoFocus />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
-                <Input id="password" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setSelectedDemo(null); }} required disabled={loading} autoComplete="current-password" />
+                <Input id="password" type="password" value={password} onChange={(e) => { setPassword(e.target.value); setSelectedDemo(null); }} required disabled={loading} />
               </div>
             </CardContent>
             <CardFooter className="flex flex-col gap-3">
               <Button type="submit" className="w-full" disabled={loading || !email || !password}>
                 {loading ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</>) : ("Sign in")}
               </Button>
-              <p className="text-xs text-muted-foreground text-center">Don&apos;t have an account? Ask your restaurant owner to invite you, or enable ERP from your YeneQR dashboard.</p>
             </CardFooter>
           </form>
         </Card>
@@ -82,7 +94,7 @@ export default function LoginPage() {
         <Card className="w-full shadow-lg">
           <CardHeader>
             <CardTitle className="text-lg">Demo Accounts</CardTitle>
-            <CardDescription>Click an account to auto-fill the form, then click <strong>Sign in</strong>. All demo passwords are <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">demo1234</code>.</CardDescription>
+            <CardDescription>Click an account to auto-fill, then click <strong>Sign in</strong>. All passwords: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">demo1234</code></CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {DEMO_ACCOUNTS.map((account) => {
@@ -106,10 +118,6 @@ export default function LoginPage() {
                 </button>
               );
             })}
-            <div className="mt-4 rounded-md bg-blue-50 border border-blue-200 p-3 text-xs text-blue-700">
-              <p className="font-medium">💡 Testing RBAC</p>
-              <p className="mt-1">Each role has different permissions. Try signing in as <strong>chef</strong> and notice that Finance &amp; HR nav items are hidden, and the &quot;Approve PO&quot; button returns 403. The <strong>owner</strong> sees everything.</p>
-            </div>
           </CardContent>
         </Card>
       </div>
