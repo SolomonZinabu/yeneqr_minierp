@@ -32,8 +32,6 @@ export default function LoginPage() {
 
 function LoginContent() {
   const router = useRouter();
-  const search = useSearchParams();
-  const next = search.get("next") ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,15 +50,14 @@ function LoginContent() {
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error ?? "Sign-in failed");
+        setLoading(false);
         return;
       }
-      toast.success("Welcome back");
-      router.push(next);
-      router.refresh();
+      // Hard redirect — avoids router.push issues on preview URLs
+      window.location.href = "/dashboard";
     } catch (err) {
       console.error("[LOGIN_ERROR]", err);
       toast.error("Something went wrong");
-    } finally {
       setLoading(false);
     }
   }
