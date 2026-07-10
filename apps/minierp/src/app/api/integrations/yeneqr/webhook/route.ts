@@ -60,38 +60,40 @@ export async function POST(req: NextRequest) {
 
     // 4) Store the event (within tenant context so IntegrationEvent is auto-scoped)
     await runWithTenant(integration.tenantId, async () => {
-      const externalId =
-        (data as { id?: string; orderId?: string; paymentId?: string }).id ??
-        (data as { orderId?: string }).orderId ??
-        (data as { paymentId?: string }).paymentId ??
-        null;
+      // Derive externalId — scope by eventType:orderId so different events for
+      // the same order (created / status_changed / payment) are stored separately.
+      const orderId = (data as { orderId?: string }).orderId;
+      const paymentId = (data as { paymentId?: string }).paymentId;
+      const envelopeId = (data as { id?: string }).id;
+      const rawExternalId = envelopeId ?? orderId ?? paymentId ?? null;
+      const externalId = rawExternalId
+        ? (envelopeId ? rawExternalId : `${eventType}:${rawExternalId}`)
+        : null;
 
-      // Dedup on (provider, externalId) — if we've already received this event,
-      // ack it without re-storing
-      const existing = await db.integrationEvent.findFirst({
-        where: { provider: "yeneqr", externalId },
-      });
+      const existing = externalId
+        ? await db.integrationEvent.findFirst({ where: { provider: "yeneqr", externalId } })
+        : null;
+      if (existing) return;
 
-      if (existing) {
-        return;
-      }
-
-      await db.integrationEvent.create({
+      const event = await db.integrationEvent.create({
         data: {
-          tenantId: integration.tenantId, // explicit for TS; middleware also injects (same value)
-          provider: "yeneqr",
-          eventType,
-          externalId,
-          payload: {
-            ...data,
-            _meta: { restaurantId, timestamp, receivedAt: new Date().toISOString() },
-          },
+          tenantId: integration.tenantId,
+          provider: "yeneqr", eventType, externalId,
+          payload: { ...data, _meta: { restaurantId, timestamp, receivedAt: new Date().toISOString() } },
           status: "received",
         },
       });
+
+      // Process the event synchronously
+      try {
+        const { YeneqrEventProcessor } = await import("@/lib/services/yeneqr-event-processor");
+        await YeneqrEventProcessor.process(event.id);
+      } catch (processError) {
+        console.error(`[YENEQR_PROCESS_ERROR] event=${event.id}:`, processError);
+      }
     });
 
-    // 5) Ack immediately — async processing happens in a background job (Phase 1)
+    // 5) Ack immediately
     return NextResponse.json({ received: true });
   } catch (error) {
     console.error("[YENEQR_WEBHOOK_ERROR]", error);
