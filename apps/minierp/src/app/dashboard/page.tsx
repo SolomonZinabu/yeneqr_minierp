@@ -7,12 +7,14 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 export default function DashboardPage() {
   const router = useRouter();
   const { user, isLoading } = useCurrentUser();
+  const [redirected, setRedirected] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !user) {
+    if (!isLoading && !user && !redirected) {
+      setRedirected(true);
       router.push("/login");
     }
-  }, [isLoading, user, router]);
+  }, [isLoading, user, redirected, router]);
 
   if (isLoading || !user) {
     return (
