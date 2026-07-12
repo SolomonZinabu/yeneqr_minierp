@@ -6,16 +6,23 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 export default function DashboardPage() {
   const { user, isLoading } = useCurrentUser();
   const [authChecked, setAuthChecked] = useState(false);
+  const [retries, setRetries] = useState(0);
 
   useEffect(() => {
     if (!isLoading) {
       if (!user) {
+        // Retry once after 1s — localStorage might not be ready yet after hard redirect
+        if (retries < 2) {
+          const t = setTimeout(() => setRetries(r => r + 1), 1000);
+          return () => clearTimeout(t);
+        }
+        // After retries, redirect to login
         window.location.href = "/login";
       } else {
         setAuthChecked(true);
       }
     }
-  }, [isLoading, user]);
+  }, [isLoading, user, retries]);
 
   if (isLoading || !authChecked || !user) {
     return (

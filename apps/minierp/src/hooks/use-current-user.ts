@@ -11,7 +11,6 @@ export interface CurrentUser {
 
 const TOKEN_KEY = "merp_token";
 
-// API client that sends Bearer token from localStorage (like YeneQR)
 export async function apiFetch(url: string, options: RequestInit = {}): Promise<Response> {
   const token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
   const headers: Record<string, string> = {
@@ -21,7 +20,7 @@ export async function apiFetch(url: string, options: RequestInit = {}): Promise<
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
-  return fetch(url, { ...options, headers });
+  return fetch(url, { ...options, headers, credentials: "include" });
 }
 
 export function useCurrentUser(): { user: CurrentUser | null; isLoading: boolean; hasPermission: (p: string) => boolean } {
@@ -30,21 +29,37 @@ export function useCurrentUser(): { user: CurrentUser | null; isLoading: boolean
 
   const fetchUser = useCallback(async () => {
     try {
-      const token = localStorage.getItem(TOKEN_KEY);
+      const token = typeof window !== "undefined" ? localStorage.getItem(TOKEN_KEY) : null;
       if (!token) {
-        setUser(null);
+        // No token in localStorage — try cookie-based fetch (credentials: include)
+        const res = await fetch("/api/me", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data);
+        } else {
+          setUser(null);
+        }
         setIsLoading(false);
         return;
       }
+      // Try Bearer token first
       const res = await fetch("/api/me", {
         headers: { "Authorization": `Bearer ${token}` },
+        credentials: "include",
       });
       if (res.ok) {
         const data = await res.json();
         setUser(data);
       } else {
-        localStorage.removeItem(TOKEN_KEY);
-        setUser(null);
+        // Bearer failed — try cookie-only (credentials: include)
+        const res2 = await fetch("/api/me", { credentials: "include" });
+        if (res2.ok) {
+          const data = await res2.json();
+          setUser(data);
+        } else {
+          localStorage.removeItem(TOKEN_KEY);
+          setUser(null);
+        }
       }
     } catch {
       setUser(null);
