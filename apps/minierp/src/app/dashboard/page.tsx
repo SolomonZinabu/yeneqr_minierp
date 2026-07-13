@@ -5,26 +5,8 @@ import { useCurrentUser } from "@/hooks/use-current-user";
 
 export default function DashboardPage() {
   const { user, isLoading } = useCurrentUser();
-  const [authChecked, setAuthChecked] = useState(false);
-  const [retries, setRetries] = useState(0);
 
-  useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        // Retry once after 1s — localStorage might not be ready yet after hard redirect
-        if (retries < 2) {
-          const t = setTimeout(() => setRetries(r => r + 1), 1000);
-          return () => clearTimeout(t);
-        }
-        // After retries, redirect to login
-        window.location.href = "/login";
-      } else {
-        setAuthChecked(true);
-      }
-    }
-  }, [isLoading, user, retries]);
-
-  if (isLoading || !authChecked || !user) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
         <div className="text-sm text-muted-foreground">Loading...</div>
@@ -39,9 +21,9 @@ export default function DashboardPage() {
         <p className="text-sm text-muted-foreground">Real-time snapshot of inventory, finance, and HR across your branches.</p>
       </div>
       <div className="rounded-md border p-4 text-sm">
-        <p className="font-medium">Welcome, {user.user.name ?? user.user.email}</p>
-        <p className="mt-1 text-muted-foreground">Role: {user.role} · {user.permissions.length} permissions</p>
-        <p className="mt-1 text-muted-foreground">Tenant: {user.tenant.name}</p>
+        <p className="font-medium">Welcome, {user?.user.name ?? user?.user.email ?? "User"}</p>
+        <p className="mt-1 text-muted-foreground">Role: {user?.role} · {user?.permissions.length ?? 0} permissions</p>
+        <p className="mt-1 text-muted-foreground">Tenant: {user?.tenant.name ?? "—"}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
         <a href="/dashboard/inventory" className="rounded-lg border p-6 hover:shadow-md transition-shadow">

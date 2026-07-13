@@ -1,5 +1,6 @@
 // src/lib/api-helpers.ts
-// Uses JWT from Authorization header (like YeneQR). NO COOKIES.
+// Standard API helpers — reads JWT from cookie (set by middleware).
+// No Bearer headers, no localStorage — just cookies.
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "./jwt-auth";
@@ -32,13 +33,13 @@ export function withTenant<T = unknown>(handler: ApiHandler<T>) {
         params = raw ?? {};
       }
 
+      // Read session from cookie
       const session = await getSession(req);
       if (!session) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
 
-      const tenantId = session.tenantId;
-      const tenant = await dbRaw.tenant.findUnique({ where: { id: tenantId } });
+      const tenant = await dbRaw.tenant.findUnique({ where: { id: session.tenantId } });
       if (!tenant) return NextResponse.json({ error: "Tenant not found" }, { status: 404 });
 
       const gate = assertErpEnabled(tenant);
@@ -47,7 +48,7 @@ export function withTenant<T = unknown>(handler: ApiHandler<T>) {
       const permissions = new Set(session.permissions || []);
       const hasPermission = (perm: string) => permissions.has(perm);
 
-      const result = await runWithTenant(tenantId, () =>
+      const result = await runWithTenant(session.tenantId, () =>
         handler({
           req, params,
           tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug, currency: tenant.currency, taxRate: tenant.taxRate, erpPlanSlug: tenant.erpPlanSlug, erpEnabled: tenant.erpEnabled },

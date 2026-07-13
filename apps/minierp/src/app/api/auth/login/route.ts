@@ -1,6 +1,6 @@
-// POST /api/auth/login — returns JWT token in JSON (client stores in localStorage)
+// POST /api/auth/login — sets JWT in HTTP-only cookie
 import { NextRequest, NextResponse } from "next/server";
-import { login } from "@/lib/jwt-auth";
+import { login, COOKIE_NAME } from "@/lib/jwt-auth";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,19 +12,20 @@ export async function POST(req: NextRequest) {
     if (!result) {
       return NextResponse.json({ error: "Invalid credentials" }, { status: 401 });
     }
-    // Return token in JSON — client stores in localStorage (like YeneQR)
-    // Also set cookie as fallback for raw fetch calls that don't send Bearer header
+    // Set HTTP-only cookie — standard auth pattern
     const response = NextResponse.json({
-      token: result.token,
       user: { id: result.payload.userId, email: result.payload.email, name: null },
       role: result.payload.role,
       tenantId: result.payload.tenantId,
       permissions: result.payload.permissions,
     });
-    response.headers.set(
-      "Set-Cookie",
-      `merp_token=${result.token}; Path=/; HttpOnly; Max-Age=604800; SameSite=None; Secure`,
-    );
+    response.cookies.set(COOKIE_NAME, result.token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+    });
     return response;
   } catch (error) {
     console.error("[LOGIN_ERROR]", error);

@@ -1,6 +1,7 @@
 // src/lib/jwt-auth.ts
-// JWT auth — matches YeneQR's pattern: token in localStorage, sent as Bearer header.
-// NO COOKIES. Cookies caused every single issue on the preview URL.
+// Standard JWT auth — token stored in HTTP-only cookie.
+// Read by middleware (edge) and API routes (node).
+// NO localStorage, NO Bearer headers — just cookies, the standard way.
 
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -8,6 +9,7 @@ import { dbRaw } from "./db";
 import { getEffectivePermissions } from "./permissions";
 
 const JWT_SECRET = process.env.JWT_SECRET || process.env.BETTER_AUTH_SECRET || "minierp-dev-secret-change-in-production";
+export const COOKIE_NAME = "merp_token";
 
 export interface TokenPayload {
   userId: string;
@@ -39,12 +41,11 @@ export function verifyToken(token: string): TokenPayload | null {
   }
 }
 
-// Read token from Authorization header first, then fall back to cookie
+/**
+ * Extract token from HTTP-only cookie in a Request.
+ * Works in both middleware (edge) and API routes (node).
+ */
 export function getTokenFromRequest(req: Request): string | null {
-  // 1. Authorization header (from localStorage — primary, like YeneQR)
-  const authHeader = req.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.substring(7);
-  // 2. Cookie fallback (for pages that use raw fetch without Bearer header)
   const cookieHeader = req.headers.get("cookie") || "";
   const cookies = Object.fromEntries(
     cookieHeader.split("; ").map((c) => {
@@ -52,16 +53,22 @@ export function getTokenFromRequest(req: Request): string | null {
       return [k, v.join("=")];
     }),
   );
-  if (cookies["merp_token"]) return cookies["merp_token"];
-  return null;
+  return cookies[COOKIE_NAME] || null;
 }
 
+/**
+ * Get session from request (cookie-based).
+ */
 export async function getSession(req: Request): Promise<TokenPayload | null> {
   const token = getTokenFromRequest(req);
   if (!token) return null;
   return verifyToken(token);
 }
 
+/**
+ * Login: verify credentials, return token + payload.
+ * The caller (API route) sets the cookie.
+ */
 export async function login(email: string, password: string): Promise<{ token: string; payload: TokenPayload } | null> {
   const user = await dbRaw.user.findUnique({ where: { email } });
   if (!user || !user.isActive) return null;

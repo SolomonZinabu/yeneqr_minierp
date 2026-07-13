@@ -1,4 +1,4 @@
-// GET /api/me — reads JWT from Authorization header (NOT cookies)
+// GET /api/me — reads JWT from cookie, returns user + permissions
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/jwt-auth";
 import { dbRaw } from "@/lib/db";

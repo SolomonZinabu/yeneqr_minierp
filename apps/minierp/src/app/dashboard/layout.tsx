@@ -1,7 +1,4 @@
-// src/app/dashboard/layout.tsx
-// Server component — NO "use client". This avoids RSC payload fetch failures
-// on the preview URL. Auth is handled client-side by the page itself.
-
+// Server component — middleware ensures user is authenticated before reaching here
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Topbar } from "@/components/dashboard/topbar";
 

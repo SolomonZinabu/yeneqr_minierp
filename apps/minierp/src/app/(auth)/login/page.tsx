@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +10,6 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Loader2, ChefHat, Crown, Calculator, Briefcase, ChefHat as ChefIcon, UtensilsCrossed, User } from "lucide-react";
 import { toast } from "sonner";
 import type { LucideIcon } from "lucide-react";
-import { TOKEN_KEY } from "@/hooks/use-current-user";
 
 interface DemoAccount { email: string; password: string; role: string; name: string; icon: LucideIcon; description: string }
 
@@ -31,6 +31,9 @@ export default function LoginPage() {
 }
 
 function LoginContent() {
+  const router = useRouter();
+  const search = useSearchParams();
+  const next = search.get("next") ?? "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,10 +55,10 @@ function LoginContent() {
         setLoading(false);
         return;
       }
-      // Store token in localStorage (like YeneQR) — NOT cookies
-      localStorage.setItem(TOKEN_KEY, data.token);
-      // Hard redirect to dashboard
-      window.location.href = "/dashboard";
+      toast.success("Welcome back");
+      // Standard Next.js navigation — cookie is set, middleware will allow access
+      router.push(next);
+      router.refresh();
     } catch (err) {
       console.error("[LOGIN_ERROR]", err);
       toast.error("Something went wrong");

@@ -14,13 +14,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { LogOut, User as UserIcon } from "lucide-react";
 import { toast } from "sonner";
-import { logout } from "@/hooks/use-current-user";
 
 export function Topbar() {
   const { user, isLoading } = useCurrentUser();
 
   async function handleSignOut() {
-    logout(); // Clears localStorage
+    // Clear the HTTP-only cookie by setting it expired
+    document.cookie = "merp_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=None; Secure";
     toast.success("Signed out");
     window.location.href = "/login";
   }
