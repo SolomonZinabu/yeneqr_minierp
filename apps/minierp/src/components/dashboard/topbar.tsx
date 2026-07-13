@@ -20,7 +20,7 @@ export function Topbar() {
 
   async function handleSignOut() {
     // Clear the HTTP-only cookie by setting it expired
-    document.cookie = "merp_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=None; Secure";
+    document.cookie = "merp_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT; SameSite=Lax";
     toast.success("Signed out");
     window.location.href = "/login";
   }
